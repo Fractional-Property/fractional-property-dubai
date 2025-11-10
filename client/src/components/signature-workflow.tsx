@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { SignatureModal } from "@/components/signature-modal";
 import type { AgreementTemplate } from "@shared/schema";
 
 interface SignatureWorkflowProps {
@@ -21,10 +22,26 @@ type DocumentStep = {
 
 export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<AgreementTemplate | null>(null);
   
   const { data: templates = [] } = useQuery<AgreementTemplate[]>({
     queryKey: ["/api/templates"],
   });
+
+  const handleOpenSignature = (template: AgreementTemplate) => {
+    setSelectedTemplate(template);
+    setIsModalOpen(true);
+  };
+
+  const handleSignComplete = () => {
+    // Move to next step
+    if (currentStep < 2) {
+      setCurrentStep(currentStep + 1);
+    }
+    setIsModalOpen(false);
+    setSelectedTemplate(null);
+  };
 
   // Define the signing workflow steps
   const steps: DocumentStep[] = [
@@ -133,13 +150,10 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
                   </div>
                   
                   <div className="flex-shrink-0">
-                    {isActive && (
+                    {isActive && template && (
                       <Button
                         size="lg"
-                        onClick={() => {
-                          // TODO: Open signature modal
-                          console.log("Preview & Sign:", step.name);
-                        }}
+                        onClick={() => handleOpenSignature(template)}
                         data-testid={`button-sign-step-${index + 1}`}
                       >
                         Preview & Sign
@@ -209,6 +223,17 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Signature Modal */}
+      {selectedTemplate && (
+        <SignatureModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          template={selectedTemplate}
+          investorId={investorId}
+          onSignComplete={handleSignComplete}
+        />
       )}
     </div>
   );
