@@ -6,13 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLoginForm } from "@/components/admin-login-form";
+import { AdminTemplates } from "@/components/admin-templates";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Investor } from "@shared/schema";
 
 export default function Admin() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [activeTab, setActiveTab] = useState("investors");
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
@@ -127,54 +130,60 @@ export default function Admin() {
 
       <main className="container py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold font-serif mb-2">Investor Management</h1>
-          <p className="text-muted-foreground">Manage investors, KYC status, and notifications</p>
+          <h1 className="text-4xl font-bold font-serif mb-2">Admin Dashboard</h1>
+          <p className="text-muted-foreground">Manage investors, agreements, and system settings</p>
         </div>
 
-        <div className="grid lg:grid-cols-4 gap-6 mb-8">
-          <Card data-testid="card-total-investors">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Investors</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tabular-nums">{investors.length}</div>
-            </CardContent>
-          </Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full max-w-md grid-cols-2 mb-8">
+            <TabsTrigger value="investors" data-testid="tab-investors">Investors</TabsTrigger>
+            <TabsTrigger value="templates" data-testid="tab-templates">Agreement Templates</TabsTrigger>
+          </TabsList>
 
-          <Card data-testid="card-fractions-sold">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Fractions Sold</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tabular-nums">3 / 4</div>
-            </CardContent>
-          </Card>
+          <TabsContent value="investors" className="space-y-6">
+            <div className="grid lg:grid-cols-4 gap-6">
+              <Card data-testid="card-total-investors">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Investors</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold tabular-nums">{investors.length}</div>
+                </CardContent>
+              </Card>
 
-          <Card data-testid="card-total-revenue">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tabular-nums">
-                AED {investors.reduce((sum, inv) => sum + Number(inv.totalInvested), 0).toLocaleString()}
-              </div>
-            </CardContent>
-          </Card>
+              <Card data-testid="card-fractions-sold">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Fractions Sold</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold tabular-nums">3 / 4</div>
+                </CardContent>
+              </Card>
 
-          <Card data-testid="card-kyc-pending">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">KYC Pending</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold tabular-nums">
-                {investors.filter((inv) => inv.kycStatus === "pending").length}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              <Card data-testid="card-total-revenue">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold tabular-nums">
+                    AED {investors.reduce((sum, inv) => sum + Number(inv.totalInvested), 0).toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
 
-        <div className="space-y-6">
-          <Card>
+              <Card data-testid="card-kyc-pending">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">KYC Pending</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold tabular-nums">
+                    {investors.filter((inv) => inv.kycStatus === "pending").length}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
             <CardHeader>
               <CardTitle className="text-2xl font-serif">All Investors</CardTitle>
               <CardDescription>View and manage all investor accounts</CardDescription>
@@ -343,7 +352,12 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
-        </div>
+          </TabsContent>
+
+          <TabsContent value="templates">
+            <AdminTemplates />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
