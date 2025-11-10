@@ -1,0 +1,63 @@
+PATCH THE FOPD MVP: Enforce 4-fraction limit (25% each) and add JOP Declaration preview per DLD Direction for Jointly Owned Property Declarations (Article 6). Update all UI, logic, and PDFs. Use existing HTML/CSS/JS + Firebase + jsPDF.
+
+---
+
+### CORE UPDATES
+
+1. **GLOBAL ENFORCEMENT**
+   - Max 4 fractions per unit (AED 900K → AED 225K each)
+   - Replace all "10" → "4", "90K" → "225K", "10%" → "25%"
+   - Progress: 0/4 funded only
+
+2. **LANDING & PROPERTY PAGE (index.html)**
+   - Hero: "Own 25% of a Dubai Apartment for AED 225,000"
+   - Escrow bar: 4 slots (0/4 → 4/4)
+   - CTA: "Reserve Your 25% Share"
+
+3. **RESERVATION MODAL**
+   - Auto-calculate: AED 225,000 × 1 fraction
+   - Block >1 reservation per user
+   - Show: "Max 4 co-owners per DLD title deed"
+
+4. **INVESTOR DASHBOARD**
+   - Show: "Your Share: 25% (1 of 4)"
+   - Escrow: "3/4 Funded" with avatars (anonymized)
+   - Button: "Preview JOP Declaration" → Generate PDF
+
+5. **JOP DECLARATION PDF (jsPDF)**
+   - Title: "Jointly Owned Property Declaration – [Unit Name]"
+   - Contents (Article 6):
+     - Building: [Project Name], [Plot No.]
+     - Unit: [Unit No.], 650 sq ft
+     - Entitlement: 25% undivided share
+     - Common Areas: Parking, pool, gym
+     - Owners Association: [TBD post-handover]
+     - Schedule: Unit layout + aggregate numbers
+   - 4 signature blocks (25% each)
+
+6. **ADMIN PANEL**
+   - Block at 4th payment
+   - Export CSV: Max 4 rows
+   - Button: "Generate JOP Draft" for DLD submission
+
+7. **DLD COMPLIANCE**
+   - Disclaimer: "Compliant with Law No. (6) of 2019 & JOPD. Max 4 co-owners."
+   - Link: dubailand.gov.ae JOPD page
+
+---
+
+### TECH
+- HTML, Tailwind, Alpine.js
+- Firebase Auth/Firestore (max 4 entries/unit)
+- jsPDF for JOPD + PoA
+- Deploy: Replit → Vercel
+
+---
+
+### OUTPUT
+1. Patch all files: index.html, dashboard.html, admin.html, app.js
+2. New jsPDF function: generateJOPD()
+3. Firebase rules: limit 4 investors per unit
+4. Comments: "// DLD JOPD Article 6 – 4 co-owners"
+
+Deploy-ready in 60 mins.
