@@ -161,9 +161,9 @@ export default function Landing() {
                   <div className="mb-6">
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-muted-foreground">Escrow Funding Progress</span>
-                      <span className="font-semibold tabular-nums">7/10 Funded</span>
+                      <span className="font-semibold tabular-nums">3/4 Funded</span>
                     </div>
-                    <Progress value={70} className="h-3" />
+                    <Progress value={75} className="h-3" />
                   </div>
 
                   <Button size="lg" onClick={() => setIsReservationOpen(true)} className="w-full" data-testid="button-reserve-pilot">
@@ -245,7 +245,7 @@ export default function Landing() {
               
               <div className="space-y-4 text-muted-foreground">
                 <p className="leading-relaxed">
-                  FOPD facilitates fractional co-ownership of off-plan real estate in Dubai, fully compliant with Dubai Land Department (DLD) regulations. Up to 10 co-owners can jointly own a single property with direct title deed registration—no Special Purpose Vehicle (SPV) or DFSA license required.
+                  FOPD facilitates fractional co-ownership of off-plan real estate in Dubai, fully compliant with Dubai Land Department (DLD) regulations. Up to 4 co-owners can jointly own a single property with direct title deed registration—no Special Purpose Vehicle (SPV) or DFSA license required.
                 </p>
                 <p className="leading-relaxed">
                   All payments are held in the developer's DLD-registered escrow account. Legal documentation includes Co-Ownership Agreements, Irrevocable Power of Attorney, and KYC/AML compliance forms.

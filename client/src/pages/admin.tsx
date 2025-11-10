@@ -310,7 +310,7 @@ export default function Admin() {
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Unit Fully Funded Notification</h3>
                   <p className="text-sm text-muted-foreground">
-                    Send email notification to all 10 co-owners that the property is fully funded
+                    Send email notification to all 4 co-owners that the property is fully funded
                   </p>
                 </div>
                 <Button 
