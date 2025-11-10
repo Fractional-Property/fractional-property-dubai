@@ -384,6 +384,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/templates", async (req, res) => {
+    try {
+      const templates = await storage.getAllTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/templates/:id", async (req, res) => {
+    try {
+      const template = await storage.getTemplateById(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      res.json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/admin/templates", async (req, res) => {
+    try {
+      const template = await storage.createOrUpdateTemplate(req.body);
+      res.json(template);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/admin/templates/:id", async (req, res) => {
+    try {
+      const template = await storage.updateTemplate(req.params.id, req.body);
+      res.json(template);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/signatures/create-session", async (req, res) => {
+    try {
+      const { investorId, propertyId, templateId } = req.body;
+      const ipAddress = req.ip || req.socket.remoteAddress;
+      const userAgent = req.get("user-agent");
+
+      const session = await storage.createSignatureSession({
+        investorId,
+        propertyId,
+        templateId,
+        ipAddress,
+        userAgent,
+      });
+
+      res.json({ sessionId: session.id, sessionToken: session.sessionToken });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/signatures/verify-session", async (req, res) => {
+    try {
+      const { sessionToken, otp } = req.body;
+      
+      const session = await storage.verifySignatureSession(sessionToken, otp);
+      
+      if (!session) {
+        return res.status(400).json({ message: "Invalid session or OTP" });
+      }
+
+      res.json({ success: true, sessionId: session.id });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/signatures/submit", async (req, res) => {
+    try {
+      const { sessionId, signatureData, consentGiven } = req.body;
+      const ipAddress = req.ip || req.socket.remoteAddress;
+      const userAgent = req.get("user-agent");
+
+      const signature = await storage.saveSignature({
+        sessionId,
+        signatureData,
+        consentGiven,
+        ipAddress,
+        userAgent,
+      });
+
+      res.json({ success: true, signatureId: signature.id });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/signatures/investor/:investorId/property/:propertyId", async (req, res) => {
+    try {
+      const { investorId, propertyId } = req.params;
+      const signatures = await storage.getInvestorSignatures(investorId, propertyId);
+      res.json(signatures);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/signed-documents/property/:propertyId", async (req, res) => {
+    try {
+      const { propertyId } = req.params;
+      const documents = await storage.getSignedDocuments(propertyId);
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/documents/generate/:propertyId/:documentType", async (req, res) => {
+    try {
+      const { propertyId, documentType } = req.params;
+      const document = await storage.generateSignedDocument(propertyId, documentType);
+      
+      res.json({ 
+        success: true, 
+        documentId: document.id,
+        downloadUrl: `/api/documents/download/${document.id}`
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

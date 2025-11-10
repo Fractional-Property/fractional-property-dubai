@@ -1,8 +1,16 @@
 import { db } from "../db";
-import { investors, fractions, properties, payments, adminUsers } from "@shared/schema";
-import type { Investor, InsertInvestor, Fraction, InsertFraction, Property, InsertProperty, Payment, InsertPayment, AdminUser } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { 
+  investors, fractions, properties, payments, adminUsers,
+  agreementTemplates, signatureSessions, investorSignatures, signedDocuments, signatureAuditLog
+} from "@shared/schema";
+import type { 
+  Investor, InsertInvestor, Fraction, InsertFraction, Property, InsertProperty, 
+  Payment, InsertPayment, AdminUser, AgreementTemplate, InsertAgreementTemplate,
+  SignatureSession, InvestorSignature, SignedDocument
+} from "@shared/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { encryptData, decryptData, generateHash, generateSecureToken, getServerTimestamp } from "./lib/crypto";
 
 export interface IStorage {
   createInvestor(investor: InsertInvestor): Promise<Investor>;
@@ -26,6 +34,19 @@ export interface IStorage {
   updatePaymentStatus(id: string, status: string, tapChargeId?: string): Promise<Payment>;
   
   getAdminUserByEmail(email: string): Promise<AdminUser | undefined>;
+  
+  getAllTemplates(): Promise<AgreementTemplate[]>;
+  getTemplateById(id: string): Promise<AgreementTemplate | undefined>;
+  createOrUpdateTemplate(template: InsertAgreementTemplate): Promise<AgreementTemplate>;
+  updateTemplate(id: string, template: Partial<AgreementTemplate>): Promise<AgreementTemplate>;
+  
+  createSignatureSession(data: any): Promise<SignatureSession>;
+  verifySignatureSession(sessionToken: string, otp: string): Promise<SignatureSession | null>;
+  saveSignature(data: any): Promise<InvestorSignature>;
+  getInvestorSignatures(investorId: string, propertyId: string): Promise<InvestorSignature[]>;
+  
+  getSignedDocuments(propertyId: string): Promise<SignedDocument[]>;
+  generateSignedDocument(propertyId: string, documentType: string): Promise<SignedDocument>;
 }
 
 export class DbStorage implements IStorage {
@@ -140,6 +161,198 @@ export class DbStorage implements IStorage {
   async getAdminUserByEmail(email: string): Promise<AdminUser | undefined> {
     const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
     return admin;
+  }
+
+  async getAllTemplates(): Promise<AgreementTemplate[]> {
+    return await db.select().from(agreementTemplates).where(eq(agreementTemplates.isActive, true));
+  }
+
+  async getTemplateById(id: string): Promise<AgreementTemplate | undefined> {
+    const [template] = await db.select().from(agreementTemplates).where(eq(agreementTemplates.id, id));
+    return template;
+  }
+
+  async createOrUpdateTemplate(template: InsertAgreementTemplate): Promise<AgreementTemplate> {
+    const contentHash = generateHash(template.content);
+    const [newTemplate] = await db
+      .insert(agreementTemplates)
+      .values({
+        ...template,
+        contentHash,
+      })
+      .returning();
+    return newTemplate;
+  }
+
+  async updateTemplate(id: string, updates: Partial<AgreementTemplate>): Promise<AgreementTemplate> {
+    const updateData: any = { ...updates, updatedAt: new Date() };
+    if (updates.content) {
+      updateData.contentHash = generateHash(updates.content);
+      updateData.version = updates.version ? updates.version + 1 : 1;
+    }
+    const [template] = await db
+      .update(agreementTemplates)
+      .set(updateData)
+      .where(eq(agreementTemplates.id, id))
+      .returning();
+    return template;
+  }
+
+  async createSignatureSession(data: {
+    investorId: string;
+    propertyId: string;
+    templateId: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<SignatureSession> {
+    const sessionToken = generateSecureToken(48);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    const [session] = await db
+      .insert(signatureSessions)
+      .values({
+        ...data,
+        sessionToken,
+        expiresAt,
+      })
+      .returning();
+
+    await db.insert(signatureAuditLog).values({
+      eventType: "session_created",
+      investorId: data.investorId,
+      sessionId: session.id,
+      propertyId: data.propertyId,
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+
+    return session;
+  }
+
+  async verifySignatureSession(sessionToken: string, otp: string): Promise<SignatureSession | null> {
+    const [session] = await db
+      .select()
+      .from(signatureSessions)
+      .where(eq(signatureSessions.sessionToken, sessionToken));
+
+    if (!session || session.expiresAt < new Date()) {
+      return null;
+    }
+
+    const [updated] = await db
+      .update(signatureSessions)
+      .set({ otpVerified: true, status: "verified" })
+      .where(eq(signatureSessions.id, session.id))
+      .returning();
+
+    await db.insert(signatureAuditLog).values({
+      eventType: "otp_verified",
+      investorId: session.investorId,
+      sessionId: session.id,
+      propertyId: session.propertyId,
+    });
+
+    return updated;
+  }
+
+  async saveSignature(data: {
+    sessionId: string;
+    signatureData: string;
+    consentGiven: boolean;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<InvestorSignature> {
+    const [session] = await db
+      .select()
+      .from(signatureSessions)
+      .where(eq(signatureSessions.id, data.sessionId));
+
+    if (!session || session.status !== "verified") {
+      throw new Error("Invalid or unverified session");
+    }
+
+    const encryptedSignature = encryptData(data.signatureData);
+    const signatureHash = generateHash(data.signatureData);
+    const serverTimestamp = getServerTimestamp();
+
+    const [signature] = await db
+      .insert(investorSignatures)
+      .values({
+        sessionId: data.sessionId,
+        investorId: session.investorId,
+        templateId: session.templateId,
+        propertyId: session.propertyId,
+        encryptedSignatureData: encryptedSignature,
+        signatureHash,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+        consentGiven: data.consentGiven,
+        serverTimestamp,
+      })
+      .returning();
+
+    await db
+      .update(signatureSessions)
+      .set({ status: "signed" })
+      .where(eq(signatureSessions.id, data.sessionId));
+
+    await db.insert(signatureAuditLog).values({
+      eventType: "signature_captured",
+      investorId: session.investorId,
+      sessionId: data.sessionId,
+      propertyId: session.propertyId,
+      metadata: JSON.stringify({ signatureHash, serverTimestamp }),
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+
+    return signature;
+  }
+
+  async getInvestorSignatures(investorId: string, propertyId: string): Promise<InvestorSignature[]> {
+    return await db
+      .select()
+      .from(investorSignatures)
+      .where(
+        and(
+          eq(investorSignatures.investorId, investorId),
+          eq(investorSignatures.propertyId, propertyId)
+        )
+      );
+  }
+
+  async getSignedDocuments(propertyId: string): Promise<SignedDocument[]> {
+    return await db
+      .select()
+      .from(signedDocuments)
+      .where(eq(signedDocuments.propertyId, propertyId));
+  }
+
+  async generateSignedDocument(propertyId: string, documentType: string): Promise<SignedDocument> {
+    console.log(`Generating signed document for property ${propertyId}, type: ${documentType}`);
+    
+    const filePath = `/uploads/signed-documents/${propertyId}-${documentType}-${Date.now()}.pdf`;
+    const fileHash = generateHash(`${propertyId}-${documentType}-${Date.now()}`);
+
+    const [document] = await db
+      .insert(signedDocuments)
+      .values({
+        propertyId,
+        documentType,
+        filePath,
+        fileHash,
+        templateVersion: 1,
+        allSignaturesComplete: false,
+      })
+      .returning();
+
+    await db.insert(signatureAuditLog).values({
+      eventType: "document_sealed",
+      propertyId,
+      metadata: JSON.stringify({ documentType, fileHash }),
+    });
+
+    return document;
   }
 }
 
