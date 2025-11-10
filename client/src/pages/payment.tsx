@@ -113,16 +113,16 @@ export default function Payment() {
         },
       },
       order: {
-        amount: 90000,
+        amount: 225000,
         currency: "AED",
         items: [
           {
             id: 1,
-            name: "10% Fraction - 1BR JVC Apartment",
+            name: "25% Fraction - 1BR JVC Apartment",
             description: "Fractional co-ownership of off-plan apartment in Dubai JVC",
             quantity: 1,
-            amount_per_unit: 90000,
-            total_amount: 90000,
+            amount_per_unit: 225000,
+            total_amount: 225000,
           },
         ],
       },
@@ -174,7 +174,7 @@ export default function Payment() {
       <main className="container py-12 max-w-4xl">
         <div className="mb-8">
           <h1 className="text-4xl font-bold font-serif mb-2">Complete Your Purchase</h1>
-          <p className="text-muted-foreground">Secure your 10% fraction of the Dubai apartment</p>
+          <p className="text-muted-foreground">Secure your 25% fraction of the Dubai apartment</p>
         </div>
 
         {paymentStatus === "success" && (
@@ -206,10 +206,10 @@ export default function Payment() {
                 <div className="space-y-4">
                   <div className="flex items-start gap-4 p-4 rounded-lg border">
                     <div className="flex-1">
-                      <h3 className="font-semibold mb-1">1BR JVC Apartment - 10% Fraction</h3>
+                      <h3 className="font-semibold mb-1">1BR JVC Apartment - 25% Fraction</h3>
                       <p className="text-sm text-muted-foreground mb-2">Jumeirah Village Circle, Dubai</p>
                       <div className="flex gap-4 text-sm">
-                        <span className="text-muted-foreground">Fraction Size: <strong className="text-foreground">10%</strong></span>
+                        <span className="text-muted-foreground">Fraction Size: <strong className="text-foreground">25%</strong></span>
                         <span className="text-muted-foreground">Property Value: <strong className="text-foreground tabular-nums">AED 900,000</strong></span>
                       </div>
                     </div>
@@ -217,8 +217,8 @@ export default function Payment() {
 
                   <div className="space-y-3 pt-4 border-t">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Fraction Purchase (10%)</span>
-                      <span className="font-medium tabular-nums">AED 90,000.00</span>
+                      <span className="text-muted-foreground">Fraction Purchase (25%)</span>
+                      <span className="font-medium tabular-nums">AED 225,000.00</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Processing Fee</span>

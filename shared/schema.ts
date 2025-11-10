@@ -36,7 +36,7 @@ export const properties = pgTable("properties", {
   location: text("location").notNull(),
   totalPrice: decimal("total_price", { precision: 12, scale: 2 }).notNull(),
   pricePerFraction: decimal("price_per_fraction", { precision: 12, scale: 2 }).notNull(),
-  totalFractions: integer("total_fractions").notNull().default(10),
+  totalFractions: integer("total_fractions").notNull().default(4),
   fractionsSold: integer("fractions_sold").notNull().default(0),
   description: text("description"),
   bedrooms: integer("bedrooms"),

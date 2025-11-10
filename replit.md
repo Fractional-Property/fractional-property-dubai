@@ -2,7 +2,7 @@
 
 ## Overview
 
-FOPD is a fractional real estate investment platform that enables investors to purchase fractional ownership (10% shares) of off-plan properties in Dubai. The platform facilitates DLD-compliant co-ownership through a structured investment process including investor registration, KYC verification, payment processing via Tap Payments, and escrow management. The pilot property is a 1-bedroom apartment in Jumeirah Village Circle (JVC) priced at AED 900,000, with each fraction priced at AED 90,000.
+FOPD is a fractional real estate investment platform that enables investors to purchase fractional ownership (25% shares) of off-plan properties in Dubai. The platform facilitates DLD-compliant co-ownership through a structured investment process including investor registration, KYC verification, payment processing via Tap Payments, and escrow management. The pilot property is a 1-bedroom apartment in Jumeirah Village Circle (JVC) priced at AED 900,000, with each fraction priced at AED 225,000.
 
 ## User Preferences
 

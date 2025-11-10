@@ -188,11 +188,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           redirect: {
             url: `${req.headers.origin}/dashboard`,
           },
-          description: "FOPD Fractional Ownership Purchase - 10% Fraction",
+          description: "FOPD Fractional Ownership Purchase - 25% Fraction",
           metadata: {
             investorId,
             propertyId,
-            fractionPercentage: "10",
+            fractionPercentage: "25",
           },
         }),
       });

@@ -32,7 +32,7 @@ export default function Dashboard() {
     return <LoginForm onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const fractionPercentage = (currentInvestor?.fractionsPurchased || 0) * 10;
+  const fractionPercentage = (currentInvestor?.fractionsPurchased || 0) * 25;
   const escrowProgress = pilotProperty ? (pilotProperty.fractionsSold / pilotProperty.totalFractions) * 100 : 0;
 
   return (
@@ -173,7 +173,7 @@ export default function Dashboard() {
                     <div className="flex justify-between text-sm mb-2">
                       <span className="text-muted-foreground">Fractions Sold</span>
                       <span className="font-semibold tabular-nums">
-                        {pilotProperty?.fractionsSold || 7} / {pilotProperty?.totalFractions || 10}
+                        {pilotProperty?.fractionsSold || 3} / {pilotProperty?.totalFractions || 4}
                       </span>
                     </div>
                     <Progress value={escrowProgress} className="h-3 mb-1" />

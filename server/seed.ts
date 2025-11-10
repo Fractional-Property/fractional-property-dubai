@@ -1,19 +1,20 @@
 import { db } from "../db";
 import { properties } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 async function seed() {
   console.log("Seeding database...");
 
-  const existingProperty = await db.select().from(properties).where(() => properties.isPilot);
+  const existingProperty = await db.select().from(properties).where(eq(properties.isPilot, true));
   
   if (existingProperty.length === 0) {
     await db.insert(properties).values({
       title: "1BR JVC Apartment",
       location: "Jumeirah Village Circle, Dubai",
       totalPrice: "900000",
-      pricePerFraction: "90000",
-      totalFractions: 10,
-      fractionsSold: 7,
+      pricePerFraction: "225000",
+      totalFractions: 4,
+      fractionsSold: 3,
       description: "Modern 1-bedroom apartment in the heart of Jumeirah Village Circle. Perfect for investors looking to enter the Dubai real estate market with fractional ownership.",
       bedrooms: 1,
       bathrooms: 1,

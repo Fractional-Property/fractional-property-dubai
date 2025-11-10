@@ -55,11 +55,11 @@ export default function Landing() {
         <div className="container relative z-10">
           <div className="max-w-3xl py-16 md:py-24">
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold font-serif mb-6 leading-tight">
-              Own 10% of a Dubai Apartment for{" "}
-              <span className="text-primary">AED 90,000</span>
+              Own 25% of a Dubai Apartment for{" "}
+              <span className="text-primary">AED 225,000</span>
             </h1>
             <p className="text-xl md:text-2xl text-muted-foreground mb-8 leading-relaxed">
-              DLD-compliant fractional co-ownership of off-plan real estate in Dubai. Direct title deed registration with up to 10 co-owners per property.
+              DLD-compliant fractional co-ownership of off-plan real estate in Dubai. Direct title deed registration with up to 4 co-owners per property.
             </p>
             
             <div className="flex flex-wrap gap-4 mb-12">
@@ -149,12 +149,12 @@ export default function Landing() {
                       <span className="text-xl font-bold tabular-nums">AED 900,000</span>
                     </div>
                     <div className="flex justify-between items-baseline border-b pb-2">
-                      <span className="text-muted-foreground">Price per Fraction (10%)</span>
-                      <span className="text-2xl font-bold tabular-nums text-primary">AED 90,000</span>
+                      <span className="text-muted-foreground">Price per Fraction (25%)</span>
+                      <span className="text-2xl font-bold tabular-nums text-primary">AED 225,000</span>
                     </div>
                     <div className="flex justify-between items-baseline">
                       <span className="text-muted-foreground">Available Fractions</span>
-                      <span className="text-lg font-semibold tabular-nums">3 of 10</span>
+                      <span className="text-lg font-semibold tabular-nums">1 of 4</span>
                     </div>
                   </div>
 
@@ -202,7 +202,7 @@ export default function Landing() {
               </div>
               <h3 className="text-xl font-bold mb-3">1. Reserve Your Fraction</h3>
               <p className="text-muted-foreground leading-relaxed">
-                Complete your registration and reserve your 10% fraction. Pay AED 90,000 securely through Tap Payments.
+                Complete your registration and reserve your 25% fraction. Pay AED 225,000 securely through Tap Payments.
               </p>
             </Card>
 
