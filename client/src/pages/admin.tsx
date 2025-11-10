@@ -146,7 +146,7 @@ export default function Admin() {
               <CardTitle className="text-sm font-medium">Fractions Sold</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold tabular-nums">7 / 10</div>
+              <div className="text-3xl font-bold tabular-nums">3 / 4</div>
             </CardContent>
           </Card>
 

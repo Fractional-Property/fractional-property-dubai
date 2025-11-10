@@ -333,7 +333,7 @@ export default function Payment() {
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium">Title Deed Registration</p>
-                      <p className="text-xs text-muted-foreground">When all 10 fractions sold</p>
+                      <p className="text-xs text-muted-foreground">When all 4 fractions sold</p>
                     </div>
                   </div>
                 </div>

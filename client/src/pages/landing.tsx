@@ -222,7 +222,7 @@ export default function Landing() {
               </div>
               <h3 className="text-xl font-bold mb-3">3. Direct Ownership</h3>
               <p className="text-muted-foreground leading-relaxed">
-                Once all 10 fractions are sold, title deeds are registered directly with DLD in all co-owners' names.
+                Once all 4 fractions are sold, title deeds are registered directly with DLD in all co-owners' names.
               </p>
             </Card>
           </div>
