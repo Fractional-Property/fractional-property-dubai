@@ -1,0 +1,120 @@
+Skip to content
+
+Create App
+Import code or design
+Home
+Apps
+Published apps
+Integrations
+Usage
+Explore more
+
+Refer & Earn
+Install Replit on
+
+Need more credits?
+
+Refer a friend
+
+Hi @rami63, what do you want to make?
+
+Describe your app idea, '/' for integrations…
+
+App theme
+Auto theme
+
+
+
+Start chat
+New
+Introducing Agent 3: Autonomy for all
+
+App Testing checks changes using a web browser to test buttons, forms, links and APIs.
+Agents & Automations enable you to build AI bots or workflow automations in plain English.
+Runs on its own for up to 200 minutes, handling tasks and recovering from errors autonomously.
+Learn more
+
+Your recent Apps
+View All
+
+XrpStakingDashboard
+XrpStakingDashboard
+1 day ago
+
+Published
+invest off-plan website (Search Results Page - Grid)
+invest off-plan website (Search Results Page - Grid)
+1 day ago
+
+Private
+
+CraftConnect
+CraftConnect
+2 days ago
+
+Public
+Apollo
+
+Pasted-Build-a-complete-production-ready-no-code-investor-portal-for-a-DLD-compliant-fractional-off-plan--1762790195323_1762790195324.txt
+Build a complete, production-ready, no-code investor portal for a DLD-compliant fractional off-plan real estate platform in Dubai called "FOPD" (Fractional Off-Plan Dubai). The platform allows up to 10 co-owners per off-plan apartment with direct title deed registration (no SPV, no DFSA license). Use HTML, CSS, JavaScript, and integrate with Telr or PayTabs for payments and WhatsApp Business API for notifications.
+
+---
+
+### CORE REQUIREMENTS
+
+1. **Landing Page (index.html)**
+   - Hero: "Own 10% of a Dubai apartment for AED 90,000"
+   - CTA: "Reserve Your Share" (modal form)
+   - Trust badges: DLD Compliant, Escrow Protected, No DFSA Needed
+   - Live pilot unit: 1BR JVC, AED 900K total, 10 fractions @ AED 90K
+
+2. **Investor Dashboard (dashboard.html)**
+   - Login via email + OTP (Firebase Auth)
+   - Show: Fraction owned, Payment status, Escrow progress bar (e.g., 7/10 funded)
+   - Downloadable: Co-Ownership Agreement (PDF), PoA (PDF), KYC Form
+
+3. **Payment Flow**
+   - Reserve fraction → Pay AED 90,000 via Telr/PayTabs
+   - On success: Auto-email "Payment Confirmed" + WhatsApp alert
+   - Escrow: Show developer escrow account (IBAN visible)
+
+4. **Admin Panel (admin.html)**
+   - Login: admin@fopd.ae / password
+   - View all investors, mark KYC complete, export to CSV
+   - Trigger "Unit Fully Funded" → auto-email all co-owners
+
+5. **Legal Docs (PDF Templates - Generate via HTML-to-PDF)**
+   - Co-Ownership Agreement (Arabic + English)
+   - Irrevocable PoA (notarized format)
+   - KYC/AML Form
+
+6. **Tech Stack**
+   - Frontend: HTML5, Tailwind CSS, Alpine.js
+   - Backend: Firebase (Auth, Firestore, Functions)
+   - Payments: Telr or PayTabs SDK
+   - Hosting: Replit + Vercel (deploy button)
+   - WhatsApp: Twilio or official WhatsApp Business API
+
+7. **DLD Compliance**
+   - No "investment" language — use "co-ownership"
+   - Clear disclaimer: "This is direct real estate co-ownership. Not a security. Not regulated by DFSA."
+   - Escrow: Developer’s DLD-registered account only
+
+8. **60-Day Launch Ready**
+   - Mobile-responsive
+   - SEO: Meta tags for "fractional ownership Dubai no DFSA"
+   - Analytics: Google Analytics + Hotjar
+
+---
+
+### OUTPUT
+Generate:
+1. Full folder structure
+2. All HTML/CSS/JS files
+3. Firebase config
+4. Telr/PayTabs integration code
+5. PDF generation (jsPDF)
+6. Deploy instructions (Replit → Vercel)
+7. WhatsApp notification script
+
+Include comments in code. Make it copy-paste deployable in 60 minutes.
