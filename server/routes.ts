@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertInvestorSchema, loginSchema, verifyOtpSchema, adminLoginSchema } from "@shared/schema";
+import { insertInvestorSchema, loginSchema, verifyOtpSchema, adminLoginSchema, submitSignatureSchema } from "@shared/schema";
 import { randomInt } from "crypto";
 import multer from "multer";
 import path from "path";
@@ -505,7 +505,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PRODUCTION-HARDENED signature submission endpoint with session-based authentication
+  app.post("/api/signatures/submit-signature", async (req, res) => {
+    try {
+      // 1. Validate request body with Zod
+      const validatedData = submitSignatureSchema.parse(req.body);
+      const { sessionToken, signatureDataUrl, consentGiven } = validatedData;
+      
+      const ipAddress = req.ip || req.socket.remoteAddress;
+      const userAgent = req.get("user-agent");
+
+      // 2. Look up and verify session - ENFORCE SESSION-BASED AUTHENTICATION
+      const session = await storage.getSessionByToken(sessionToken);
+      
+      if (!session) {
+        return res.status(401).json({ 
+          message: "Unauthorized: Invalid or expired session token" 
+        });
+      }
+
+      // Verify session is verified (OTP confirmed) and not expired
+      if (session.status !== "verified" || session.expiresAt < new Date()) {
+        return res.status(401).json({ 
+          message: "Unauthorized: Session not verified or has expired" 
+        });
+      }
+
+      // 3. Extract authenticated investor identity from session (NOT from request body)
+      const { investorId, propertyId, templateId } = session;
+
+      // 4. Check for duplicate signature - ENFORCE UNIQUENESS CONSTRAINT
+      const existingSignature = await storage.checkDuplicateSignature(
+        investorId, 
+        templateId, 
+        propertyId
+      );
+
+      if (existingSignature) {
+        return res.status(409).json({ 
+          message: "Duplicate signature: This investor has already signed this document for this property",
+          existingSignatureId: existingSignature.id
+        });
+      }
+
+      // 5. Encrypt and hash signature data
+      const { encryptData, generateHash } = await import("./lib/crypto.js");
+      const encryptedSignature = encryptData(signatureDataUrl);
+      const signatureHash = generateHash(signatureDataUrl);
+
+      // 6. Save signature with session reference
+      const signature = await storage.saveInvestorSignature({
+        sessionId: session.id,
+        investorId,
+        templateId,
+        propertyId,
+        encryptedSignatureData: encryptedSignature,
+        signatureHash,
+        ipAddress,
+        userAgent,
+        consentGiven,
+      });
+
+      res.json({ 
+        success: true, 
+        signatureId: signature.id,
+        message: "Signature encrypted and stored securely"
+      });
+    } catch (error: any) {
+      console.error("Signature submission error:", error);
+      
+      // Handle Zod validation errors
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      
+      // Handle database unique constraint violations
+      if (error.code === "23505") {
+        return res.status(409).json({ 
+          message: "Duplicate signature: This signature has already been recorded" 
+        });
+      }
+      
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get investor's signature status for all documents
+  app.get("/api/signatures/investor/:investorId/status", async (req, res) => {
+    try {
+      const { investorId } = req.params;
+      const signatures = await storage.getInvestorSignatures(investorId);
+      
+      // Return which documents have been signed
+      const signedDocuments = signatures.map((sig: any) => ({
+        templateId: sig.templateId,
+        signedAt: sig.signedAt,
+        documentType: sig.templateId // Will map to template type
+      }));
+
+      res.json({ signatures: signedDocuments });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get multi-party signing status for a property
+  app.get("/api/signatures/property/:propertyId/status", async (req, res) => {
+    try {
+      const { propertyId } = req.params;
+      const status = await storage.getPropertySignatureStatus(propertyId);
+      
+      res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
 }
+

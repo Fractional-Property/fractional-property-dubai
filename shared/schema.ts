@@ -112,7 +112,7 @@ export const signerAssignments = pgTable("signer_assignments", {
 // Encrypted investor signatures with audit trail
 export const investorSignatures = pgTable("investor_signatures", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => signatureSessions.id),
+  sessionId: varchar("session_id").references(() => signatureSessions.id),
   investorId: varchar("investor_id").notNull().references(() => investors.id),
   templateId: varchar("template_id").notNull().references(() => agreementTemplates.id),
   propertyId: varchar("property_id").notNull().references(() => properties.id),
@@ -123,7 +123,9 @@ export const investorSignatures = pgTable("investor_signatures", {
   signedAt: timestamp("signed_at").notNull().defaultNow(),
   consentGiven: boolean("consent_given").notNull().default(true),
   serverTimestamp: text("server_timestamp").notNull(), // UTC timestamp for non-repudiation
-});
+}, (table) => ({
+  uniqueInvestorSignature: sql`UNIQUE (investor_id, template_id, property_id)`
+}));
 
 // Generated and sealed documents with certificate pages
 export const signedDocuments = pgTable("signed_documents", {
@@ -238,6 +240,12 @@ export const verifyOtpSchema = z.object({
 export const adminLoginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export const submitSignatureSchema = z.object({
+  sessionToken: z.string().min(32, "Session token is required"),
+  signatureDataUrl: z.string().min(10, "Signature data is required"),
+  consentGiven: z.boolean().default(true),
 });
 
 export type Investor = typeof investors.$inferSelect;

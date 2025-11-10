@@ -42,8 +42,12 @@ export interface IStorage {
   
   createSignatureSession(data: any): Promise<SignatureSession>;
   verifySignatureSession(sessionToken: string, otp: string): Promise<SignatureSession | null>;
+  getSessionByToken(sessionToken: string): Promise<SignatureSession | null>;
+  checkDuplicateSignature(investorId: string, templateId: string, propertyId: string): Promise<InvestorSignature | null>;
   saveSignature(data: any): Promise<InvestorSignature>;
-  getInvestorSignatures(investorId: string, propertyId: string): Promise<InvestorSignature[]>;
+  saveInvestorSignature(data: any): Promise<InvestorSignature>;
+  getInvestorSignatures(investorId: string): Promise<InvestorSignature[]>;
+  getPropertySignatureStatus(propertyId: string): Promise<any>;
   
   getSignedDocuments(propertyId: string): Promise<SignedDocument[]>;
   generateSignedDocument(propertyId: string, documentType: string): Promise<SignedDocument>;
@@ -255,6 +259,34 @@ export class DbStorage implements IStorage {
     return updated;
   }
 
+  async getSessionByToken(sessionToken: string): Promise<SignatureSession | null> {
+    const [session] = await db
+      .select()
+      .from(signatureSessions)
+      .where(eq(signatureSessions.sessionToken, sessionToken));
+
+    return session || null;
+  }
+
+  async checkDuplicateSignature(
+    investorId: string, 
+    templateId: string, 
+    propertyId: string
+  ): Promise<InvestorSignature | null> {
+    const [existing] = await db
+      .select()
+      .from(investorSignatures)
+      .where(
+        and(
+          eq(investorSignatures.investorId, investorId),
+          eq(investorSignatures.templateId, templateId),
+          eq(investorSignatures.propertyId, propertyId)
+        )
+      );
+
+    return existing || null;
+  }
+
   async saveSignature(data: {
     sessionId: string;
     signatureData: string;
@@ -309,16 +341,98 @@ export class DbStorage implements IStorage {
     return signature;
   }
 
-  async getInvestorSignatures(investorId: string, propertyId: string): Promise<InvestorSignature[]> {
+  async saveInvestorSignature(data: {
+    sessionId?: string;
+    investorId: string;
+    templateId: string;
+    propertyId: string;
+    encryptedSignatureData: string;
+    signatureHash: string;
+    ipAddress?: string;
+    userAgent?: string;
+    consentGiven?: boolean;
+  }): Promise<InvestorSignature> {
+    const serverTimestamp = getServerTimestamp();
+
+    const [signature] = await db
+      .insert(investorSignatures)
+      .values({
+        sessionId: data.sessionId || null,
+        investorId: data.investorId,
+        templateId: data.templateId,
+        propertyId: data.propertyId,
+        encryptedSignatureData: data.encryptedSignatureData,
+        signatureHash: data.signatureHash,
+        ipAddress: data.ipAddress,
+        userAgent: data.userAgent,
+        consentGiven: data.consentGiven ?? true,
+        serverTimestamp,
+      })
+      .returning();
+
+    await db.insert(signatureAuditLog).values({
+      eventType: "signature_captured",
+      investorId: data.investorId,
+      sessionId: data.sessionId,
+      propertyId: data.propertyId,
+      metadata: JSON.stringify({ signatureHash: data.signatureHash, serverTimestamp }),
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+
+    return signature;
+  }
+
+  async getInvestorSignatures(investorId: string, propertyId?: string): Promise<InvestorSignature[]> {
+    if (propertyId) {
+      return await db
+        .select()
+        .from(investorSignatures)
+        .where(
+          and(
+            eq(investorSignatures.investorId, investorId),
+            eq(investorSignatures.propertyId, propertyId)
+          )
+        );
+    }
+    
     return await db
       .select()
       .from(investorSignatures)
-      .where(
-        and(
-          eq(investorSignatures.investorId, investorId),
-          eq(investorSignatures.propertyId, propertyId)
-        )
-      );
+      .where(eq(investorSignatures.investorId, investorId));
+  }
+
+  async getPropertySignatureStatus(propertyId: string): Promise<any> {
+    const signatures = await db
+      .select()
+      .from(investorSignatures)
+      .where(eq(investorSignatures.propertyId, propertyId));
+
+    const templates = await this.getAllTemplates();
+    
+    const status = templates.map(template => {
+      // Count DISTINCT investors who have signed this template
+      const signaturesForTemplate = signatures.filter(sig => sig.templateId === template.id);
+      const uniqueInvestors = new Set(signaturesForTemplate.map(sig => sig.investorId));
+      const distinctInvestorCount = uniqueInvestors.size;
+      
+      return {
+        templateId: template.id,
+        templateName: template.name,
+        documentType: template.documentType,
+        signedCount: distinctInvestorCount,
+        totalRequired: 4,
+        isComplete: distinctInvestorCount >= 4,
+        // Include list of investors who have signed for transparency
+        signedInvestorIds: Array.from(uniqueInvestors)
+      };
+    });
+
+    return {
+      propertyId,
+      documents: status,
+      allComplete: status.every(doc => doc.isComplete)
+    };
   }
 
   async getSignedDocuments(propertyId: string): Promise<SignedDocument[]> {
