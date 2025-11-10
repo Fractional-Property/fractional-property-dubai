@@ -237,8 +237,8 @@ export function ReservationModal({ open, onOpenChange }: ReservationModalProps) 
                 <h3 className="font-semibold text-lg">Payment Summary</h3>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fraction Purchase (10%)</span>
-                    <span className="font-medium tabular-nums">AED 90,000.00</span>
+                    <span className="text-muted-foreground">Fraction Purchase (25%)</span>
+                    <span className="font-medium tabular-nums">AED 225,000.00</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Processing Fee</span>
@@ -246,7 +246,7 @@ export function ReservationModal({ open, onOpenChange }: ReservationModalProps) 
                   </div>
                   <div className="border-t pt-2 mt-2 flex justify-between">
                     <span className="font-semibold">Total Amount</span>
-                    <span className="text-2xl font-bold tabular-nums text-primary">AED 90,000.00</span>
+                    <span className="text-2xl font-bold tabular-nums text-primary">AED 225,000.00</span>
                   </div>
                 </div>
               </div>

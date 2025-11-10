@@ -230,7 +230,7 @@ export default function Payment() {
                     </div>
                     <div className="border-t pt-3 flex justify-between">
                       <span className="font-semibold text-lg">Total Due Today</span>
-                      <span className="text-3xl font-bold tabular-nums text-primary">AED 90,000.00</span>
+                      <span className="text-3xl font-bold tabular-nums text-primary">AED 225,000.00</span>
                     </div>
                   </div>
                 </div>

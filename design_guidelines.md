@@ -47,7 +47,7 @@
 - Mobile: Stack vertically, image at top with reduced height (h-64)
 
 **Content Structure**:
-- Headline: "Own 10% of a Dubai Apartment for AED 90,000"
+- Headline: "Own 25% of a Dubai Apartment for AED 225,000"
 - Subheadline: Brief explanation of fractional ownership benefit
 - Primary CTA: "Reserve Your Share" (prominent, lg size)
 - Secondary CTA: "View Pilot Unit" (outline style)
@@ -59,7 +59,7 @@
 - Image at top with aspect ratio 16:9, rounded-lg
 - Content area with padding p-6
 - Title, location, price breakdown table
-- Escrow progress bar (visual indicator showing 7/10 funded)
+- Escrow progress bar (visual indicator showing 3/4 funded)
 - Action button at bottom
 
 **Dashboard Stats Cards**:
