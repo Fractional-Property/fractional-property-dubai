@@ -18,6 +18,25 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
 
+  const handleDemoMode = () => {
+    const demoInvestor: Investor = {
+      id: "demo-investor-id",
+      email: "demo@fopd.ae",
+      fullName: "Demo Investor",
+      phone: "+971501234567",
+      kycStatus: "pending",
+      paymentStatus: "pending",
+      fractionsPurchased: 0,
+      totalInvested: "0",
+      passportDocPath: null,
+      proofOfAddressPath: null,
+      bankStatementPath: null,
+      documentsUploadedAt: null,
+      createdAt: new Date(),
+    };
+    onLoginSuccess(demoInvestor);
+  };
+
   const emailForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -121,8 +140,28 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
                   Send Login Code
                 </Button>
 
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="w-full" 
+                  size="lg"
+                  onClick={handleDemoMode}
+                  data-testid="button-demo-mode"
+                >
+                  View Demo Dashboard
+                </Button>
+
                 <div className="text-center">
-                  <Button variant="link" size="sm" asChild data-testid="link-back-home">
+                  <Button variant="ghost" size="sm" asChild data-testid="link-back-home">
                     <a href="/">← Back to Home</a>
                   </Button>
                 </div>
@@ -172,7 +211,7 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
                 </Button>
 
                 <div className="text-center space-y-2">
-                  <Button variant="link" size="sm" onClick={() => setStep("email")} data-testid="button-change-email">
+                  <Button variant="ghost" size="sm" onClick={() => setStep("email")} data-testid="button-change-email">
                     Use Different Email
                   </Button>
                   <p className="text-xs text-muted-foreground">
