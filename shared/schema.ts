@@ -12,6 +12,10 @@ export const investors = pgTable("investors", {
   totalInvested: decimal("total_invested", { precision: 12, scale: 2 }).notNull().default("0"),
   kycStatus: text("kyc_status").notNull().default("pending"),
   paymentStatus: text("payment_status").notNull().default("pending"),
+  passportDocPath: text("passport_doc_path"),
+  proofOfAddressPath: text("proof_of_address_path"),
+  bankStatementPath: text("bank_statement_path"),
+  documentsUploadedAt: timestamp("documents_uploaded_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

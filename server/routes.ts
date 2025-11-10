@@ -3,12 +3,45 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertInvestorSchema, loginSchema, verifyOtpSchema, adminLoginSchema } from "@shared/schema";
 import { randomInt } from "crypto";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 const otpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 function generateOTP(): string {
   return randomInt(100000, 999999).toString();
 }
+
+const uploadsDir = path.join(process.cwd(), "uploads", "kyc-documents");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage_config = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+    cb(null, `${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
+  },
+});
+
+const fileFilter = (req: any, file: any, cb: any) => {
+  const allowedMimes = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error("Invalid file type. Only PDF, JPG, and PNG files are allowed."), false);
+  }
+};
+
+const upload = multer({
+  storage: storage_config,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter,
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -81,6 +114,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(investor);
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/investors/:id/upload-documents", upload.fields([
+    { name: "passport", maxCount: 1 },
+    { name: "proofOfAddress", maxCount: 1 },
+    { name: "bankStatement", maxCount: 1 },
+  ]), async (req, res) => {
+    try {
+      const investorId = req.params.id;
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+
+      if (!files || Object.keys(files).length === 0) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+
+      const documentPaths: any = {};
+
+      if (files.passport && files.passport[0]) {
+        documentPaths.passportDocPath = `uploads/kyc-documents/${files.passport[0].filename}`;
+      }
+
+      if (files.proofOfAddress && files.proofOfAddress[0]) {
+        documentPaths.proofOfAddressPath = `uploads/kyc-documents/${files.proofOfAddress[0].filename}`;
+      }
+
+      if (files.bankStatement && files.bankStatement[0]) {
+        documentPaths.bankStatementPath = `uploads/kyc-documents/${files.bankStatement[0].filename}`;
+      }
+
+      documentPaths.documentsUploadedAt = new Date();
+
+      const investor = await storage.updateInvestorDocuments(investorId, documentPaths);
+
+      res.json({
+        message: "Documents uploaded successfully",
+        investor,
+        uploadedFiles: Object.keys(files),
+      });
+    } catch (error: any) {
+      console.error("File upload error:", error);
       res.status(500).json({ message: error.message });
     }
   });

@@ -11,6 +11,7 @@ export interface IStorage {
   getAllInvestors(): Promise<Investor[]>;
   updateInvestorKYCStatus(id: string, status: string): Promise<Investor>;
   updateInvestorAfterPurchase(id: string, fractionsPurchased: number, totalInvested: string): Promise<Investor>;
+  updateInvestorDocuments(id: string, documents: Partial<Investor>): Promise<Investor>;
   
   createFraction(fraction: InsertFraction): Promise<Fraction>;
   getFractionsByInvestor(investorId: string): Promise<Fraction[]>;
@@ -64,6 +65,15 @@ export class DbStorage implements IStorage {
         totalInvested,
         paymentStatus: "completed"
       })
+      .where(eq(investors.id, id))
+      .returning();
+    return investor;
+  }
+
+  async updateInvestorDocuments(id: string, documents: Partial<Investor>): Promise<Investor> {
+    const [investor] = await db
+      .update(investors)
+      .set(documents)
       .where(eq(investors.id, id))
       .returning();
     return investor;

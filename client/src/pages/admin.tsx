@@ -207,6 +207,7 @@ export default function Admin() {
                       <TableHead className="text-center">Fractions</TableHead>
                       <TableHead className="text-right">Invested</TableHead>
                       <TableHead className="text-center">Payment</TableHead>
+                      <TableHead className="text-center">Documents</TableHead>
                       <TableHead className="text-center">KYC</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -214,7 +215,7 @@ export default function Admin() {
                   <TableBody>
                     {isLoading ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-12">
+                        <TableCell colSpan={9} className="text-center py-12">
                           <div className="flex items-center justify-center gap-2">
                             <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
                             <span className="text-muted-foreground">Loading investors...</span>
@@ -235,14 +236,32 @@ export default function Admin() {
                             <Badge
                               variant={investor.paymentStatus === "completed" ? "default" : "secondary"}
                               className="capitalize"
+                              data-testid={`badge-payment-status-${investor.id}`}
                             >
                               {investor.paymentStatus}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-1" data-testid={`text-documents-status-${investor.id}`}>
+                              {investor.passportDocPath && (
+                                <div className="w-2 h-2 rounded-full bg-green-500" title="Passport uploaded" />
+                              )}
+                              {investor.proofOfAddressPath && (
+                                <div className="w-2 h-2 rounded-full bg-green-500" title="Proof of address uploaded" />
+                              )}
+                              {investor.bankStatementPath && (
+                                <div className="w-2 h-2 rounded-full bg-green-500" title="Bank statement uploaded" />
+                              )}
+                              {!investor.passportDocPath && !investor.proofOfAddressPath && !investor.bankStatementPath && (
+                                <span className="text-xs text-muted-foreground">None</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
                             <Badge
                               variant={investor.kycStatus === "approved" ? "default" : "secondary"}
                               className="capitalize"
+                              data-testid={`badge-kyc-status-${investor.id}`}
                             >
                               {investor.kycStatus}
                             </Badge>
@@ -270,7 +289,7 @@ export default function Admin() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                        <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                           {searchQuery ? "No investors found matching your search" : "No investors yet"}
                         </TableCell>
                       </TableRow>

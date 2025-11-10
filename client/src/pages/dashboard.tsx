@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { LoginForm } from "@/components/login-form";
+import { KYCUpload } from "@/components/kyc-upload";
 import type { Investor, Property } from "@shared/schema";
 
 export default function Dashboard() {
@@ -196,7 +197,16 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-8">
-            <Card>
+            <KYCUpload
+              investorId={currentInvestor?.id || ""}
+              currentDocuments={{
+                passportDocPath: currentInvestor?.passportDocPath,
+                proofOfAddressPath: currentInvestor?.proofOfAddressPath,
+                bankStatementPath: currentInvestor?.bankStatementPath,
+              }}
+            />
+
+            <Card data-testid="card-legal-documents">
               <CardHeader>
                 <CardTitle className="text-xl font-serif">Legal Documents</CardTitle>
                 <CardDescription>Download your co-ownership paperwork</CardDescription>
@@ -216,13 +226,9 @@ export default function Dashboard() {
                 </Button>
                 
                 <div className="pt-4 border-t">
-                  <p className="text-xs text-muted-foreground mb-3">
+                  <p className="text-xs text-muted-foreground">
                     All documents are available in both English and Arabic
                   </p>
-                  <Button variant="secondary" className="w-full" data-testid="button-upload-kyc">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Upload Completed KYC
-                  </Button>
                 </div>
               </CardContent>
             </Card>
