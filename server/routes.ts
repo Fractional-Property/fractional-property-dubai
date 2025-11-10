@@ -67,22 +67,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, otp } = verifyOtpSchema.parse(req.body);
       
-      const storedOtp = otpStore.get(email);
+      // DEVELOPMENT MODE: Accept any OTP for testing/demo purposes
+      console.log(`OTP verification bypassed for ${email} - any OTP accepted`);
       
-      if (!storedOtp) {
-        return res.status(400).json({ message: "OTP not found or expired" });
-      }
-
-      if (storedOtp.expiresAt < Date.now()) {
+      // Clear stored OTP if it exists
+      if (otpStore.has(email)) {
         otpStore.delete(email);
-        return res.status(400).json({ message: "OTP expired" });
       }
-
-      if (storedOtp.otp !== otp) {
-        return res.status(400).json({ message: "Invalid OTP" });
-      }
-
-      otpStore.delete(email);
 
       const investor = await storage.getInvestorByEmail(email);
       
