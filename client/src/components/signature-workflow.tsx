@@ -35,8 +35,8 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
   };
 
   const handleSignComplete = () => {
-    // Move to next step
-    if (currentStep < 2) {
+    // Move to next step - allow completion of all 3 steps
+    if (currentStep < steps.length) {
       setCurrentStep(currentStep + 1);
     }
     setIsModalOpen(false);
