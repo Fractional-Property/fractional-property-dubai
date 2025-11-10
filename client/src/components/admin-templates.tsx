@@ -72,7 +72,7 @@ export function AdminTemplates() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-3 gap-6">
         {templates.map((template) => (
           <Card key={template.id} data-testid={`card-template-${template.templateType}`}>
             <CardHeader>
@@ -97,7 +97,9 @@ export function AdminTemplates() {
                   <strong>Template Type:</strong>{" "}
                   {template.templateType === "co_ownership"
                     ? "Co-Ownership Agreement"
-                    : "Power of Attorney"}
+                    : template.templateType === "power_of_attorney"
+                    ? "Power of Attorney"
+                    : "JOP Declaration (DLD Article 6)"}
                 </p>
                 <p>
                   <strong>Last Updated:</strong>{" "}

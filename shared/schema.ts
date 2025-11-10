@@ -72,7 +72,7 @@ export const adminUsers = pgTable("admin_users", {
 export const agreementTemplates = pgTable("agreement_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  templateType: text("template_type").notNull(), // "co_ownership" | "power_of_attorney"
+  templateType: text("template_type").notNull(), // "co_ownership" | "power_of_attorney" | "jop_declaration"
   content: text("content").notNull(), // Rich text content with placeholders
   contentHash: text("content_hash").notNull(), // SHA-256 hash for integrity
   version: integer("version").notNull().default(1),
@@ -102,7 +102,7 @@ export const signerAssignments = pgTable("signer_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   propertyId: varchar("property_id").notNull().references(() => properties.id),
   investorId: varchar("investor_id").notNull().references(() => investors.id),
-  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney"
+  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney" | "jop_declaration"
   signerRole: text("signer_role").notNull().default("co_owner"), // "co_owner" | "attorney" | "witness"
   signingOrder: integer("signing_order").notNull().default(1),
   status: text("status").notNull().default("pending"), // "pending" | "signed" | "declined"
@@ -129,7 +129,7 @@ export const investorSignatures = pgTable("investor_signatures", {
 export const signedDocuments = pgTable("signed_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   propertyId: varchar("property_id").notNull().references(() => properties.id),
-  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney"
+  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney" | "jop_declaration"
   filePath: text("file_path").notNull(), // Encrypted PDF in secure storage
   fileHash: text("file_hash").notNull(), // SHA-256 hash of final PDF
   templateVersion: integer("template_version").notNull(),

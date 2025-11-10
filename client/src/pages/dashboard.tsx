@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { LoginForm } from "@/components/login-form";
 import { KYCUpload } from "@/components/kyc-upload";
+import { SignatureWorkflow } from "@/components/signature-workflow";
 import type { Investor, Property } from "@shared/schema";
 
 export default function Dashboard() {
@@ -206,32 +207,8 @@ export default function Dashboard() {
               }}
             />
 
-            <Card data-testid="card-legal-documents">
-              <CardHeader>
-                <CardTitle className="text-xl font-serif">Legal Documents</CardTitle>
-                <CardDescription>Download your co-ownership paperwork</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button variant="outline" className="w-full justify-start" data-testid="button-download-co-ownership">
-                  <Download className="mr-2 h-4 w-4" />
-                  Co-Ownership Agreement
-                </Button>
-                <Button variant="outline" className="w-full justify-start" data-testid="button-download-poa-dashboard">
-                  <Download className="mr-2 h-4 w-4" />
-                  Power of Attorney (PoA)
-                </Button>
-                <Button variant="outline" className="w-full justify-start" data-testid="button-download-kyc-form">
-                  <Download className="mr-2 h-4 w-4" />
-                  KYC/AML Form
-                </Button>
-                
-                <div className="pt-4 border-t">
-                  <p className="text-xs text-muted-foreground">
-                    All documents are available in both English and Arabic
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Multi-Step Signature Workflow */}
+            <SignatureWorkflow investorId={currentInvestor?.id || ""} />
 
             <Card className="border-primary/20 bg-primary/5">
               <CardHeader>

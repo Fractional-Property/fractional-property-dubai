@@ -98,7 +98,12 @@ Preferred communication style: Simple, everyday language.
 
 **Encryption**: Signatures encrypted using AES-256-GCM with authentication tags. Encryption key derived from SESSION_SECRET using scrypt. All sensitive data stored encrypted with SHA-256 hashes for verification.
 
-**Template Management**: Admin dashboard allows editing agreement templates (Co-Ownership Agreement, Power of Attorney). Each edit increments version number and updates SHA-256 content hash for tamper detection.
+**Template Management**: Admin dashboard allows editing three legal agreement templates:
+1. Co-Ownership Agreement - Defines fractional ownership rights and obligations
+2. Irrevocable Power of Attorney - Developer authorization for DLD processes
+3. Jointly Owned Property Declaration (JOPD) - DLD Article 6 compliant declaration for 4-party co-ownership
+
+Each edit increments version number and updates SHA-256 content hash for tamper detection.
 
 **Multi-Party Signing**: System supports 4 co-owners signing same document. Signer assignments track roles, signing order, and completion status. Final document generated only when all signatures collected.
 
