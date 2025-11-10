@@ -68,6 +68,91 @@ export const adminUsers = pgTable("admin_users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Agreement templates with versioning and checksums for tamper detection
+export const agreementTemplates = pgTable("agreement_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  templateType: text("template_type").notNull(), // "co_ownership" | "power_of_attorney"
+  content: text("content").notNull(), // Rich text content with placeholders
+  contentHash: text("content_hash").notNull(), // SHA-256 hash for integrity
+  version: integer("version").notNull().default(1),
+  isActive: boolean("is_active").notNull().default(true),
+  templatePdfPath: text("template_pdf_path"), // Optional: Pre-approved PDF template
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Signature sessions for OTP-verified multi-step signing
+export const signatureSessions = pgTable("signature_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  investorId: varchar("investor_id").notNull().references(() => investors.id),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  templateId: varchar("template_id").notNull().references(() => agreementTemplates.id),
+  sessionToken: text("session_token").notNull(), // Secure random token
+  otpVerified: boolean("otp_verified").notNull().default(false),
+  status: text("status").notNull().default("pending"), // "pending" | "verified" | "signed" | "expired"
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Signer assignments for multi-party agreements
+export const signerAssignments = pgTable("signer_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  investorId: varchar("investor_id").notNull().references(() => investors.id),
+  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney"
+  signerRole: text("signer_role").notNull().default("co_owner"), // "co_owner" | "attorney" | "witness"
+  signingOrder: integer("signing_order").notNull().default(1),
+  status: text("status").notNull().default("pending"), // "pending" | "signed" | "declined"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Encrypted investor signatures with audit trail
+export const investorSignatures = pgTable("investor_signatures", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => signatureSessions.id),
+  investorId: varchar("investor_id").notNull().references(() => investors.id),
+  templateId: varchar("template_id").notNull().references(() => agreementTemplates.id),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  encryptedSignatureData: text("encrypted_signature_data").notNull(), // Encrypted base64 signature
+  signatureHash: text("signature_hash").notNull(), // SHA-256 hash for verification
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+  consentGiven: boolean("consent_given").notNull().default(true),
+  serverTimestamp: text("server_timestamp").notNull(), // UTC timestamp for non-repudiation
+});
+
+// Generated and sealed documents with certificate pages
+export const signedDocuments = pgTable("signed_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  documentType: text("document_type").notNull(), // "co_ownership" | "power_of_attorney"
+  filePath: text("file_path").notNull(), // Encrypted PDF in secure storage
+  fileHash: text("file_hash").notNull(), // SHA-256 hash of final PDF
+  templateVersion: integer("template_version").notNull(),
+  allSignaturesComplete: boolean("all_signatures_complete").notNull().default(false),
+  sealedAt: timestamp("sealed_at"),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+});
+
+// Immutable audit log for all signing activities
+export const signatureAuditLog = pgTable("signature_audit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType: text("event_type").notNull(), // "session_created" | "otp_verified" | "signature_captured" | "document_sealed"
+  investorId: varchar("investor_id").references(() => investors.id),
+  sessionId: varchar("session_id").references(() => signatureSessions.id),
+  propertyId: varchar("property_id").references(() => properties.id),
+  metadata: text("metadata"), // JSON string with event details
+  requestHash: text("request_hash"), // Hash of request data
+  responseHash: text("response_hash"), // Hash of response data
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
 export const insertInvestorSchema = createInsertSchema(investors).omit({
   id: true,
   createdAt: true,
@@ -96,6 +181,51 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({
   completedAt: true,
 });
 
+export const insertAgreementTemplateSchema = createInsertSchema(agreementTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  version: true,
+  contentHash: true,
+}).extend({
+  name: z.string().min(1, "Template name is required"),
+  content: z.string().min(10, "Content must be at least 10 characters"),
+  templateType: z.enum(["co_ownership", "power_of_attorney"]),
+});
+
+export const insertSignatureSessionSchema = createInsertSchema(signatureSessions).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  sessionToken: z.string().min(32, "Session token required"),
+});
+
+export const insertSignerAssignmentSchema = createInsertSchema(signerAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertInvestorSignatureSchema = createInsertSchema(investorSignatures).omit({
+  id: true,
+  signedAt: true,
+  signatureHash: true,
+  serverTimestamp: true,
+}).extend({
+  encryptedSignatureData: z.string().min(10, "Signature data is required"),
+});
+
+export const insertSignedDocumentSchema = createInsertSchema(signedDocuments).omit({
+  id: true,
+  generatedAt: true,
+  fileHash: true,
+  sealedAt: true,
+});
+
+export const insertAuditLogSchema = createInsertSchema(signatureAuditLog).omit({
+  id: true,
+  timestamp: true,
+});
+
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
@@ -119,3 +249,15 @@ export type InsertProperty = z.infer<typeof insertPropertySchema>;
 export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type AdminUser = typeof adminUsers.$inferSelect;
+export type AgreementTemplate = typeof agreementTemplates.$inferSelect;
+export type InsertAgreementTemplate = z.infer<typeof insertAgreementTemplateSchema>;
+export type SignatureSession = typeof signatureSessions.$inferSelect;
+export type InsertSignatureSession = z.infer<typeof insertSignatureSessionSchema>;
+export type SignerAssignment = typeof signerAssignments.$inferSelect;
+export type InsertSignerAssignment = z.infer<typeof insertSignerAssignmentSchema>;
+export type InvestorSignature = typeof investorSignatures.$inferSelect;
+export type InsertInvestorSignature = z.infer<typeof insertInvestorSignatureSchema>;
+export type SignedDocument = typeof signedDocuments.$inferSelect;
+export type InsertSignedDocument = z.infer<typeof insertSignedDocumentSchema>;
+export type AuditLog = typeof signatureAuditLog.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
