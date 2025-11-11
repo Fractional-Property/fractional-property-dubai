@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, decimal } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, decimal, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -171,6 +171,56 @@ export const dldExports = pgTable("dld_exports", {
   filePath: varchar("file_path").notNull(),
 });
 
+// Property reservations - tracks investor interest and share allocation
+export const propertyReservations = pgTable("property_reservations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  initiatorInvestorId: varchar("initiator_investor_id").notNull().references(() => investors.id), // Investor who started the reservation
+  reservationStatus: text("reservation_status").notNull().default("draft"), // "draft" | "invitations_sent" | "all_signed" | "payment_pending" | "payment_complete" | "cancelled"
+  totalSlotsReserved: integer("total_slots_reserved").notNull().default(1), // Max 4
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  propertyIdIdx: index("idx_propertyReservations_propertyId").on(table.propertyId),
+  checkTotalSlotsReserved: sql`CHECK (total_slots_reserved BETWEEN 1 AND 4)`,
+  uniqueActiveReservation: sql`UNIQUE (property_id) WHERE reservation_status IN ('draft', 'invitations_sent', 'all_signed', 'payment_pending')`,
+}));
+
+// Co-owner slots - individual share allocations within a reservation
+export const coOwnerSlots = pgTable("co_owner_slots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reservationId: varchar("reservation_id").notNull().references(() => propertyReservations.id, { onDelete: "cascade" }),
+  slotNumber: integer("slot_number").notNull(), // 1-4
+  investorId: varchar("investor_id").references(() => investors.id), // null if slot not yet claimed
+  sharePercentage: decimal("share_percentage", { precision: 5, scale: 2 }).notNull(), // e.g., 25.00, 33.33, 50.00
+  invitationStatus: text("invitation_status").notNull().default("reserved"), // "reserved" | "invited" | "accepted" | "declined"
+  invitationEmail: text("invitation_email"), // Email of invited co-owner
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  reservationIdIdx: index("idx_coOwnerSlots_reservationId").on(table.reservationId),
+  uniqueReservationSlot: sql`UNIQUE (reservation_id, slot_number)`,
+  uniqueReservationEmail: sql`UNIQUE (reservation_id, invitation_email)`,
+  checkSlotNumber: sql`CHECK (slot_number >= 1 AND slot_number <= 4)`,
+  checkSharePercentage: sql`CHECK (share_percentage > 0 AND share_percentage <= 100)`,
+}));
+
+// Co-owner invitations - email invites for co-ownership
+export const coOwnerInvitations = pgTable("co_owner_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reservationId: varchar("reservation_id").notNull().references(() => propertyReservations.id, { onDelete: "cascade" }),
+  slotId: varchar("slot_id").notNull().references(() => coOwnerSlots.id, { onDelete: "cascade" }),
+  invitedEmail: text("invited_email").notNull(),
+  invitedByInvestorId: varchar("invited_by_investor_id").notNull().references(() => investors.id),
+  invitationToken: text("invitation_token").notNull().unique(), // Secure token for link
+  status: text("status").notNull().default("pending"), // "pending" | "accepted" | "declined" | "expired"
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  reservationIdIdx: index("idx_coOwnerInvitations_reservationId").on(table.reservationId),
+  uniqueSlotInvitation: sql`UNIQUE (slot_id)`,
+}));
+
 export const insertInvestorSchema = createInsertSchema(investors).omit({
   id: true,
   createdAt: true,
@@ -251,6 +301,31 @@ export const insertDldExportSchema = createInsertSchema(dldExports).omit({
   generatedAt: true,
 });
 
+export const insertPropertyReservationSchema = createInsertSchema(propertyReservations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  totalSlotsReserved: z.number().min(1).max(4, "Maximum 4 co-owners allowed"),
+});
+
+export const insertCoOwnerSlotSchema = createInsertSchema(coOwnerSlots).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  slotNumber: z.number().min(1).max(4),
+  sharePercentage: z.string().regex(/^\d+(\.\d{1,2})?$/, "Invalid percentage format"),
+});
+
+export const insertCoOwnerInvitationSchema = createInsertSchema(coOwnerInvitations).omit({
+  id: true,
+  createdAt: true,
+  acceptedAt: true,
+}).extend({
+  invitedEmail: z.string().email("Invalid email address"),
+  invitationToken: z.string().min(32, "Invitation token required"),
+});
+
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
@@ -294,3 +369,9 @@ export type AuditLog = typeof signatureAuditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type DldExport = typeof dldExports.$inferSelect;
 export type InsertDldExport = z.infer<typeof insertDldExportSchema>;
+export type PropertyReservation = typeof propertyReservations.$inferSelect;
+export type InsertPropertyReservation = z.infer<typeof insertPropertyReservationSchema>;
+export type CoOwnerSlot = typeof coOwnerSlots.$inferSelect;
+export type InsertCoOwnerSlot = z.infer<typeof insertCoOwnerSlotSchema>;
+export type CoOwnerInvitation = typeof coOwnerInvitations.$inferSelect;
+export type InsertCoOwnerInvitation = z.infer<typeof insertCoOwnerInvitationSchema>;
