@@ -232,6 +232,7 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
           onClose={() => setIsModalOpen(false)}
           template={selectedTemplate}
           investorId={investorId}
+          propertyId="pilot-property-jvc-001"
           onSignComplete={handleSignComplete}
         />
       )}

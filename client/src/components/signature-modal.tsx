@@ -4,6 +4,8 @@ import { X, Download, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { AgreementTemplate } from "@shared/schema";
 
 interface SignatureModalProps {
@@ -11,18 +13,77 @@ interface SignatureModalProps {
   onClose: () => void;
   template: AgreementTemplate;
   investorId: string;
+  propertyId: string;
   onSignComplete: () => void;
 }
 
-export function SignatureModal({ isOpen, onClose, template, investorId, onSignComplete }: SignatureModalProps) {
+export function SignatureModal({ isOpen, onClose, template, investorId, propertyId, onSignComplete }: SignatureModalProps) {
   const [currentView, setCurrentView] = useState<"preview" | "sign" | "success">("preview");
   const [signaturePad, setSignaturePad] = useState<SignaturePad | null>(null);
+  const [sessionToken, setSessionToken] = useState<string>("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
+  // Create signature session when modal opens
+  const createSessionMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("/api/signatures/create-session", {
+        method: "POST",
+        body: JSON.stringify({
+          investorId,
+          propertyId,
+          templateId: template.id
+        })
+      });
+    },
+    onSuccess: (data: any) => {
+      setSessionToken(data.sessionToken);
+    }
+  });
+
+  // Submit signature mutation
+  const submitSignatureMutation = useMutation({
+    mutationFn: async (signatureDataUrl: string) => {
+      return await apiRequest("/api/signatures/submit-signature", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionToken,
+          signatureDataUrl,
+          consentGiven: true
+        })
+      });
+    },
+    onSuccess: () => {
+      // Invalidate queries to refresh signature status
+      queryClient.invalidateQueries({ queryKey: ["/api/signatures/investor", investorId, "status"] });
+      setCurrentView("success");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Signature Failed",
+        description: error.message || "Failed to save signature. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  useEffect(() => {
+    if (isOpen && !sessionToken) {
+      createSessionMutation.mutate();
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (canvasRef.current && currentView === "sign") {
-      const pad = new SignaturePad(canvasRef.current, {
+      const canvas = canvasRef.current;
+      
+      // HiDPI canvas scaling for crisp signatures
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      canvas.width = canvas.offsetWidth * ratio;
+      canvas.height = canvas.offsetHeight * ratio;
+      canvas.getContext("2d")?.scale(ratio, ratio);
+      
+      const pad = new SignaturePad(canvas, {
         backgroundColor: "rgb(255, 255, 255)",
         penColor: "rgb(0, 0, 0)",
       });
@@ -51,14 +112,8 @@ export function SignatureModal({ isOpen, onClose, template, investorId, onSignCo
     // Get signature data
     const signatureDataUrl = signaturePad.toDataURL();
     
-    // TODO: Send to backend for encryption and storage
-    console.log("Signature captured for:", template.name);
-    console.log("Investor ID:", investorId);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    setCurrentView("success");
+    // Submit to backend for encryption and storage
+    submitSignatureMutation.mutate(signatureDataUrl);
   };
 
   const handleClose = () => {
