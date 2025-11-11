@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { AdminTemplates } from "@/components/admin-templates";
+import { AdminSignatureStatus } from "@/components/admin-signature-status";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import type { Investor } from "@shared/schema";
@@ -135,9 +136,10 @@ export default function Admin() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-8">
+          <TabsList className="grid w-full max-w-lg grid-cols-3 mb-8">
             <TabsTrigger value="investors" data-testid="tab-investors">Investors</TabsTrigger>
-            <TabsTrigger value="templates" data-testid="tab-templates">Agreement Templates</TabsTrigger>
+            <TabsTrigger value="signatures" data-testid="tab-signatures">Signatures</TabsTrigger>
+            <TabsTrigger value="templates" data-testid="tab-templates">Templates</TabsTrigger>
           </TabsList>
 
           <TabsContent value="investors" className="space-y-6">
@@ -352,6 +354,10 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
+          </TabsContent>
+
+          <TabsContent value="signatures">
+            <AdminSignatureStatus />
           </TabsContent>
 
           <TabsContent value="templates">
