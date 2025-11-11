@@ -293,3 +293,297 @@ export function generateDocumentFilename(
   const timestamp = new Date().toISOString().split('T')[0];
   return `${templateType}_${sanitizedName}_${propertyId}_${timestamp}.pdf`;
 }
+
+interface InvestorSignatureData {
+  investor: Investor;
+  signatureImage: string;
+  signedAt: Date;
+  ipAddress?: string;
+  signatureHash: string;
+}
+
+interface GenerateAggregatedPDFOptions {
+  template: AgreementTemplate;
+  property: Property;
+  signatures: InvestorSignatureData[];
+  allInvestors: Investor[];
+}
+
+/**
+ * Generate aggregated PDF with all signatures and certificate pages
+ * This creates ONE master PDF containing all signatures for a document type
+ */
+export async function generateAggregatedPDF(options: GenerateAggregatedPDFOptions): Promise<Uint8Array> {
+  const { template, property, signatures, allInvestors } = options;
+
+  if (signatures.length === 0) {
+    throw new Error("No signatures provided for aggregated PDF");
+  }
+
+  const pdfDoc = await PDFDocument.create();
+  const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 50;
+  const contentWidth = pageWidth - (margin * 2);
+
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let yPosition = pageHeight - margin;
+
+  // Document header
+  page.drawText("FRACTIONAL OFF-PLAN DUBAI (FOPD)", {
+    x: margin,
+    y: yPosition,
+    size: 16,
+    font: timesRomanBold,
+    color: rgb(0, 0, 0),
+  });
+  yPosition -= 25;
+
+  page.drawText(template.name, {
+    x: margin,
+    y: yPosition,
+    size: 14,
+    font: timesRomanBold,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+  yPosition -= 20;
+
+  page.drawText(`Multi-Party Agreement - ${signatures.length} Co-Owners`, {
+    x: margin,
+    y: yPosition,
+    size: 10,
+    font: helveticaFont,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  yPosition -= 35;
+
+  // Fill template with property and investor data
+  const filledContent = fillTemplatePlaceholders(
+    template.content,
+    signatures[0].investor, // Primary investor for placeholders
+    property,
+    allInvestors
+  );
+
+  // Render content
+  const paragraphs = filledContent.split('\n\n');
+  const fontSize = 11;
+  const lineHeight = fontSize * 1.4;
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) continue;
+
+    const words = paragraph.split(' ');
+    let line = '';
+
+    for (const word of words) {
+      const testLine = line + word + ' ';
+      const testWidth = timesRomanFont.widthOfTextAtSize(testLine, fontSize);
+
+      if (testWidth > contentWidth && line.length > 0) {
+        page.drawText(line.trim(), {
+          x: margin,
+          y: yPosition,
+          size: fontSize,
+          font: timesRomanFont,
+          color: rgb(0, 0, 0),
+        });
+        yPosition -= lineHeight;
+        line = word + ' ';
+
+        if (yPosition < margin + 100) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          yPosition = pageHeight - margin;
+        }
+      } else {
+        line = testLine;
+      }
+    }
+
+    if (line.trim()) {
+      page.drawText(line.trim(), {
+        x: margin,
+        y: yPosition,
+        size: fontSize,
+        font: timesRomanFont,
+        color: rgb(0, 0, 0),
+      });
+      yPosition -= lineHeight;
+    }
+
+    yPosition -= lineHeight * 0.5;
+
+    if (yPosition < margin + 100) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      yPosition = pageHeight - margin;
+    }
+  }
+
+  // Add signature summary section
+  yPosition -= 30;
+  if (yPosition < margin + 200) {
+    page = pdfDoc.addPage([pageWidth, pageHeight]);
+    yPosition = pageHeight - margin;
+  }
+
+  page.drawText("ELECTRONICALLY SIGNED BY ALL PARTIES", {
+    x: margin,
+    y: yPosition,
+    size: 12,
+    font: timesRomanBold,
+    color: rgb(0, 0, 0),
+  });
+  yPosition -= 25;
+
+  page.drawText(`This document has been electronically signed by ${signatures.length} parties.`, {
+    x: margin,
+    y: yPosition,
+    size: 10,
+    font: helveticaFont,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  yPosition -= 20;
+
+  page.drawText("See certificate pages following this document for complete signature details.", {
+    x: margin,
+    y: yPosition,
+    size: 10,
+    font: helveticaFont,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+
+  // Add certificate page for each signer
+  for (let i = 0; i < signatures.length; i++) {
+    const sig = signatures[i];
+    
+    page = pdfDoc.addPage([pageWidth, pageHeight]);
+    yPosition = pageHeight - margin;
+
+    // Certificate header
+    page.drawText("SIGNATURE CERTIFICATE", {
+      x: margin,
+      y: yPosition,
+      size: 18,
+      font: timesRomanBold,
+      color: rgb(0, 0, 0),
+    });
+    yPosition -= 30;
+
+    page.drawText(`Signer ${i + 1} of ${signatures.length}`, {
+      x: margin,
+      y: yPosition,
+      size: 12,
+      font: helveticaBold,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    yPosition -= 40;
+
+    // Signer information
+    const infoItems = [
+      { label: "Signer Name", value: sig.investor.fullName },
+      { label: "Investor ID", value: sig.investor.id },
+      { label: "Email Address", value: sig.investor.email },
+      { label: "Phone Number", value: sig.investor.phone },
+      { label: "Signature Timestamp", value: sig.signedAt.toISOString() },
+      { label: "IP Address", value: sig.ipAddress || "N/A" },
+      { label: "Signature Hash (SHA-256)", value: sig.signatureHash.substring(0, 64) + "..." },
+    ];
+
+    for (const item of infoItems) {
+      page.drawText(item.label + ":", {
+        x: margin,
+        y: yPosition,
+        size: 10,
+        font: helveticaBold,
+        color: rgb(0, 0, 0),
+      });
+      yPosition -= 15;
+
+      page.drawText(item.value, {
+        x: margin + 20,
+        y: yPosition,
+        size: 10,
+        font: helveticaFont,
+        color: rgb(0.3, 0.3, 0.3),
+      });
+      yPosition -= 25;
+    }
+
+    yPosition -= 20;
+
+    // Embed signature image
+    try {
+      const base64Data = sig.signatureImage.replace(/^data:image\/png;base64,/, '');
+      const signatureImageBytes = Buffer.from(base64Data, 'base64');
+      const signatureImg = await pdfDoc.embedPng(signatureImageBytes);
+      
+      const signatureWidth = 250;
+      const signatureHeight = 100;
+
+      page.drawText("Digital Signature:", {
+        x: margin,
+        y: yPosition,
+        size: 10,
+        font: helveticaBold,
+        color: rgb(0, 0, 0),
+      });
+      yPosition -= 120;
+      
+      page.drawImage(signatureImg, {
+        x: margin,
+        y: yPosition,
+        width: signatureWidth,
+        height: signatureHeight,
+      });
+      yPosition -= 30;
+    } catch (error) {
+      console.error("Failed to embed signature image:", error);
+      page.drawText("[Digital Signature - Image Unavailable]", {
+        x: margin,
+        y: yPosition,
+        size: 10,
+        font: helveticaFont,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      yPosition -= 40;
+    }
+
+    // Certificate footer
+    yPosition -= 20;
+    page.drawText("This certificate verifies the authenticity of the electronic signature.", {
+      x: margin,
+      y: yPosition,
+      size: 9,
+      font: helveticaFont,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+  }
+
+  // Add footer to all pages
+  const pages = pdfDoc.getPages();
+  pages.forEach((page, index) => {
+    const footerY = 30;
+    page.drawText(`Document ID: ${template.id} | Version ${template.version}`, {
+      x: margin,
+      y: footerY,
+      size: 8,
+      font: helveticaFont,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+    
+    page.drawText(`Page ${index + 1} of ${pages.length}`, {
+      x: pageWidth - margin - 60,
+      y: footerY,
+      size: 8,
+      font: helveticaFont,
+      color: rgb(0.6, 0.6, 0.6),
+    });
+  });
+
+  return await pdfDoc.save();
+}

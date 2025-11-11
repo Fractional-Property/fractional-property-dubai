@@ -45,6 +45,38 @@ export function AdminSignatureStatus() {
     }
   });
 
+  // Mutation for exporting DLD bundle
+  const exportDLDBundleMutation = useMutation({
+    mutationFn: async (propertyId: string) => {
+      const response = await fetch(`/api/documents/export-dld-bundle/${propertyId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to export DLD bundle");
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+      
+      // Extract filename from Content-Disposition header
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let filename = "dld-bundle.zip";
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+)"?/);
+        if (match) {
+          filename = match[1];
+        }
+      }
+
+      return { blob, filename };
+    }
+  });
+
   const handleDownloadPDF = async (documentType: string, doc: any) => {
     try {
       // Get the first investor who signed this document
@@ -94,11 +126,36 @@ export function AdminSignatureStatus() {
     });
   };
 
-  const handleExportDLDBundle = () => {
-    toast({
-      title: "Exporting DLD Bundle",
-      description: "Generating signed PDFs and CSV for DLD submission...",
-    });
+  const handleExportDLDBundle = async () => {
+    try {
+      toast({
+        title: "Exporting DLD Bundle",
+        description: "Generating consolidated PDFs and CSV for DLD submission...",
+      });
+
+      const result = await exportDLDBundleMutation.mutateAsync(propertyId);
+
+      // Create a download link and trigger download
+      const url = window.URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Bundle Exported Successfully",
+        description: `Downloaded ${result.filename} with 3 PDFs, CSV, and metadata`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export Failed",
+        description: error.message || "Failed to export DLD bundle. Please ensure all signatures are complete.",
+        variant: "destructive"
+      });
+    }
   };
 
   if (isLoading) {
@@ -152,9 +209,10 @@ export function AdminSignatureStatus() {
                 variant="default"
                 className="flex-1 bg-green-600 hover:bg-green-700"
                 data-testid="button-export-dld-bundle"
+                disabled={exportDLDBundleMutation.isPending}
               >
                 <Download className="mr-2 h-4 w-4" />
-                Export DLD Bundle
+                {exportDLDBundleMutation.isPending ? "Generating Bundle..." : "Export DLD Bundle"}
               </Button>
             )}
           </div>

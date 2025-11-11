@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { 
   investors, fractions, properties, payments, adminUsers,
-  agreementTemplates, signatureSessions, investorSignatures, signedDocuments, signatureAuditLog
+  agreementTemplates, signatureSessions, investorSignatures, signedDocuments, signatureAuditLog, dldExports
 } from "@shared/schema";
 import type { 
   Investor, InsertInvestor, Fraction, InsertFraction, Property, InsertProperty, 
@@ -55,6 +55,9 @@ export interface IStorage {
   getSignedDocuments(propertyId: string): Promise<SignedDocument[]>;
   getSignedDocumentById(id: string): Promise<SignedDocument | undefined>;
   generateSignedDocument(propertyId: string, documentType: string, investorId: string): Promise<SignedDocument>;
+  
+  getDLDExportsByProperty(propertyId: string): Promise<any[]>;
+  createDLDExport(data: any): Promise<any>;
 }
 
 export class DbStorage implements IStorage {
@@ -599,6 +602,15 @@ export class DbStorage implements IStorage {
 
     console.log(`Document generated successfully: ${relativeFilePath}`);
     return document;
+  }
+
+  async getDLDExportsByProperty(propertyId: string): Promise<any[]> {
+    return await db.select().from(dldExports).where(eq(dldExports.propertyId, propertyId));
+  }
+
+  async createDLDExport(data: any): Promise<any> {
+    const [exportRecord] = await db.insert(dldExports).values(data).returning();
+    return exportRecord;
   }
 }
 

@@ -688,6 +688,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export DLD Bundle - generates consolidated ZIP with PDFs and CSV
+  app.post("/api/documents/export-dld-bundle/:propertyId", async (req, res) => {
+    try {
+      const { propertyId } = req.params;
+      const { orchestrateBundleCreation } = await import("./lib/dld-bundle");
+
+      // For MVP, we'll use a default admin user ID
+      // In production, this should come from the authenticated session
+      const adminUserId = "admin";
+
+      console.log(`Starting DLD bundle export for property: ${propertyId}`);
+
+      // Orchestrate bundle creation
+      const result = await orchestrateBundleCreation(propertyId, adminUserId);
+
+      if (!result.success) {
+        // Determine appropriate status code
+        const statusCode = result.error?.includes("not all signers completed") ? 409 :
+                          result.error?.includes("KYC") ? 400 : 500;
+        
+        return res.status(statusCode).json({ 
+          success: false,
+          message: result.error || "Failed to generate DLD bundle"
+        });
+      }
+
+      if (!result.zipBuffer) {
+        return res.status(500).json({
+          success: false,
+          message: "Bundle generated but ZIP buffer is missing"
+        });
+      }
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const filename = `property-${propertyId}-dld-bundle-${timestamp}.zip`;
+
+      // Set headers for ZIP download
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Length", result.zipBuffer.length.toString());
+
+      // Send ZIP buffer
+      res.send(result.zipBuffer);
+
+      console.log(`DLD bundle exported successfully: ${filename}`);
+    } catch (error: any) {
+      console.error("DLD bundle export error:", error);
+      res.status(500).json({ 
+        success: false,
+        message: error.message || "Internal server error during bundle export"
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

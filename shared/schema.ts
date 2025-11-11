@@ -13,6 +13,8 @@ export const investors = pgTable("investors", {
   kycStatus: text("kyc_status").notNull().default("pending"),
   paymentStatus: text("payment_status").notNull().default("pending"),
   passportDocPath: text("passport_doc_path"),
+  passportNumber: text("passport_number"),
+  emiratesId: text("emirates_id"),
   proofOfAddressPath: text("proof_of_address_path"),
   bankStatementPath: text("bank_statement_path"),
   documentsUploadedAt: timestamp("documents_uploaded_at"),
@@ -44,6 +46,7 @@ export const properties = pgTable("properties", {
   area: integer("area"),
   isPilot: boolean("is_pilot").notNull().default(false),
   escrowIban: text("escrow_iban"),
+  handoverDate: timestamp("handover_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -155,6 +158,16 @@ export const signatureAuditLog = pgTable("signature_audit_log", {
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
+// DLD export audit trail
+export const dldExports = pgTable("dld_exports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull().references(() => properties.id),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  requestedBy: varchar("requested_by").notNull(),
+  bundleHash: varchar("bundle_hash").notNull(),
+  filePath: varchar("file_path").notNull(),
+});
+
 export const insertInvestorSchema = createInsertSchema(investors).omit({
   id: true,
   createdAt: true,
@@ -228,6 +241,11 @@ export const insertAuditLogSchema = createInsertSchema(signatureAuditLog).omit({
   timestamp: true,
 });
 
+export const insertDldExportSchema = createInsertSchema(dldExports).omit({
+  id: true,
+  generatedAt: true,
+});
+
 export const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
@@ -269,3 +287,5 @@ export type SignedDocument = typeof signedDocuments.$inferSelect;
 export type InsertSignedDocument = z.infer<typeof insertSignedDocumentSchema>;
 export type AuditLog = typeof signatureAuditLog.$inferSelect;
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type DldExport = typeof dldExports.$inferSelect;
+export type InsertDldExport = z.infer<typeof insertDldExportSchema>;
