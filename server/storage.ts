@@ -54,7 +54,7 @@ export interface IStorage {
   
   getSignedDocuments(propertyId: string): Promise<SignedDocument[]>;
   getSignedDocumentById(id: string): Promise<SignedDocument | undefined>;
-  generateSignedDocument(propertyId: string, documentType: string, investorId: string): Promise<SignedDocument>;
+  generateSignedDocument(propertyId: string, documentType: string, investorId: string, language?: "en" | "ar"): Promise<SignedDocument>;
   
   getDLDExportsByProperty(propertyId: string): Promise<any[]>;
   createDLDExport(data: any): Promise<any>;
@@ -185,11 +185,13 @@ export class DbStorage implements IStorage {
 
   async createOrUpdateTemplate(template: InsertAgreementTemplate): Promise<AgreementTemplate> {
     const contentHash = generateHash(template.content);
+    const contentHashArabic = generateHash(template.contentArabic);
     const [newTemplate] = await db
       .insert(agreementTemplates)
       .values({
         ...template,
         contentHash,
+        contentHashArabic,
       })
       .returning();
     return newTemplate;
@@ -197,10 +199,23 @@ export class DbStorage implements IStorage {
 
   async updateTemplate(id: string, updates: Partial<AgreementTemplate>): Promise<AgreementTemplate> {
     const updateData: any = { ...updates, updatedAt: new Date() };
+    let shouldIncrementVersion = false;
+    
     if (updates.content) {
       updateData.contentHash = generateHash(updates.content);
-      updateData.version = updates.version ? updates.version + 1 : 1;
+      shouldIncrementVersion = true;
     }
+    
+    if (updates.contentArabic) {
+      updateData.contentHashArabic = generateHash(updates.contentArabic);
+      shouldIncrementVersion = true;
+    }
+    
+    if (shouldIncrementVersion) {
+      const [currentTemplate] = await db.select().from(agreementTemplates).where(eq(agreementTemplates.id, id));
+      updateData.version = currentTemplate ? currentTemplate.version + 1 : 1;
+    }
+    
     const [template] = await db
       .update(agreementTemplates)
       .set(updateData)
@@ -457,8 +472,8 @@ export class DbStorage implements IStorage {
     return document;
   }
 
-  async generateSignedDocument(propertyId: string, documentType: string, investorId: string): Promise<SignedDocument> {
-    console.log(`Generating signed document for property ${propertyId}, type: ${documentType}, investor: ${investorId}`);
+  async generateSignedDocument(propertyId: string, documentType: string, investorId: string, language: "en" | "ar" = "en"): Promise<SignedDocument> {
+    console.log(`Generating signed document for property ${propertyId}, type: ${documentType}, investor: ${investorId}, language: ${language}`);
     
     // Get template for this document type
     const templates = await this.getAllTemplates();
@@ -530,7 +545,7 @@ export class DbStorage implements IStorage {
       ).then(results => results.filter((co): co is Investor => co !== null));
     }
 
-    // Generate PDF with embedded signature
+    // Generate PDF with embedded signature - using investor's preferred language
     let pdfBytes: Uint8Array;
     try {
       pdfBytes = await generateSignedPDF({
@@ -543,6 +558,7 @@ export class DbStorage implements IStorage {
           ipAddress: investorSignature.ipAddress || undefined,
         },
         coOwners: coOwners.length > 0 ? coOwners : undefined,
+        language, // Pass language parameter
       });
     } catch (error) {
       console.error("Failed to generate PDF:", error);

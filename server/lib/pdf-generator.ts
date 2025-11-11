@@ -1,5 +1,29 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { Investor, Property, AgreementTemplate } from "@shared/schema";
+import * as fs from "fs";
+import * as path from "path";
+import { fileURLToPath } from "url";
+import arabicReshaper from "arabic-reshaper";
+import bidiFactory from "bidi-js";
+
+// Load Arabic font at module level
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const arabicFontPath = path.join(__dirname, "../fonts/NotoSansArabic-Regular.ttf");
+let arabicFontBytes: Uint8Array | null = null;
+
+// Create bidi instance at module level
+const bidi = bidiFactory();
+
+/**
+ * Lazy load Arabic font when needed
+ */
+async function getArabicFont(): Promise<Uint8Array> {
+  if (!arabicFontBytes) {
+    arabicFontBytes = fs.readFileSync(arabicFontPath);
+  }
+  return arabicFontBytes;
+}
 
 interface SignatureData {
   signatureImage: string; // Base64 data URL
@@ -13,6 +37,61 @@ interface GeneratePDFOptions {
   property: Property;
   signature: SignatureData;
   coOwners?: Investor[]; // For multi-party documents
+  language?: "en" | "ar"; // Language for PDF generation
+}
+
+/**
+ * Convert Western Arabic numerals (0-9) to Eastern Arabic numerals (٠-٩)
+ */
+function toArabicNumerals(text: string): string {
+  const arabicNumerals = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  return text.replace(/\d/g, (digit) => arabicNumerals[parseInt(digit)]);
+}
+
+/**
+ * Format date for Arabic locale
+ */
+function formatArabicDate(date: Date): string {
+  const options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  };
+  // Use Arabic locale
+  const formatted = date.toLocaleDateString('ar-AE', options);
+  return toArabicNumerals(formatted);
+}
+
+/**
+ * Format number for Arabic locale with Arabic numerals
+ */
+function formatArabicNumber(num: number): string {
+  const formatted = num.toLocaleString('en-US'); // Get comma-separated format first
+  return toArabicNumerals(formatted);
+}
+
+/**
+ * Shapes Arabic text for proper rendering in PDF
+ * Handles RTL text direction and glyph joining
+ * Uses proper Unicode bidirectional algorithm to preserve number order
+ */
+function shapeArabicText(text: string, language: "en" | "ar"): string {
+  if (language !== "ar") {
+    return text; // No shaping needed for English
+  }
+  
+  try {
+    // Step 1: Reshape Arabic glyphs (connects them properly)
+    const shaped = arabicReshaper(text);
+    
+    // Step 2: Apply proper Unicode bidi algorithm (preserves number order)
+    const bidiText = bidi.reorderVisually(shaped, "RTL");
+    
+    return bidiText;
+  } catch (error) {
+    console.error("Arabic shaping failed:", error);
+    return text; // Fallback to unshaped text
+  }
 }
 
 /**
@@ -22,7 +101,8 @@ function fillTemplatePlaceholders(
   content: string,
   investor: Investor,
   property: Property,
-  coOwners?: Investor[]
+  coOwners?: Investor[],
+  language: "en" | "ar" = "en"
 ): string {
   let filled = content;
 
@@ -32,14 +112,26 @@ function fillTemplatePlaceholders(
   filled = filled.replace(/\{INVESTOR_PHONE\}/g, investor.phone);
   filled = filled.replace(/\{INVESTOR_ID\}/g, investor.id);
 
-  // Property placeholders
+  // Property placeholders with language-specific formatting
   filled = filled.replace(/\{PROPERTY_TITLE\}/g, property.title);
   filled = filled.replace(/\{PROPERTY_LOCATION\}/g, property.location);
-  filled = filled.replace(/\{PROPERTY_PRICE\}/g, `AED ${Number(property.totalPrice).toLocaleString()}`);
-  filled = filled.replace(/\{FRACTION_PRICE\}/g, `AED ${Number(property.pricePerFraction).toLocaleString()}`);
-  filled = filled.replace(/\{BEDROOMS\}/g, property.bedrooms?.toString() || "N/A");
-  filled = filled.replace(/\{BATHROOMS\}/g, property.bathrooms?.toString() || "N/A");
-  filled = filled.replace(/\{AREA\}/g, property.area ? `${property.area} sq ft` : "N/A");
+  
+  const totalPrice = Number(property.totalPrice);
+  const fractionPrice = Number(property.pricePerFraction);
+  
+  if (language === "ar") {
+    filled = filled.replace(/\{PROPERTY_PRICE\}/g, `${formatArabicNumber(totalPrice)} درهم`);
+    filled = filled.replace(/\{FRACTION_PRICE\}/g, `${formatArabicNumber(fractionPrice)} درهم`);
+    filled = filled.replace(/\{BEDROOMS\}/g, property.bedrooms ? toArabicNumerals(property.bedrooms.toString()) : "غير محدد");
+    filled = filled.replace(/\{BATHROOMS\}/g, property.bathrooms ? toArabicNumerals(property.bathrooms.toString()) : "غير محدد");
+    filled = filled.replace(/\{AREA\}/g, property.area ? `${toArabicNumerals(property.area.toString())} قدم مربع` : "غير محدد");
+  } else {
+    filled = filled.replace(/\{PROPERTY_PRICE\}/g, `AED ${totalPrice.toLocaleString()}`);
+    filled = filled.replace(/\{FRACTION_PRICE\}/g, `AED ${fractionPrice.toLocaleString()}`);
+    filled = filled.replace(/\{BEDROOMS\}/g, property.bedrooms?.toString() || "N/A");
+    filled = filled.replace(/\{BATHROOMS\}/g, property.bathrooms?.toString() || "N/A");
+    filled = filled.replace(/\{AREA\}/g, property.area ? `${property.area} sq ft` : "N/A");
+  }
 
   // Co-owners placeholders (for JOP Declaration)
   if (coOwners && coOwners.length > 0) {
@@ -49,13 +141,18 @@ function fillTemplatePlaceholders(
     });
   }
 
-  // Date placeholders
-  const today = new Date().toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
-  });
-  filled = filled.replace(/\{CURRENT_DATE\}/g, today);
+  // Date placeholders with language-specific formatting
+  const today = new Date();
+  if (language === "ar") {
+    filled = filled.replace(/\{CURRENT_DATE\}/g, formatArabicDate(today));
+  } else {
+    const formattedDate = today.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    filled = filled.replace(/\{CURRENT_DATE\}/g, formattedDate);
+  }
 
   return filled;
 }
@@ -64,51 +161,75 @@ function fillTemplatePlaceholders(
  * Generate a professional PDF document with embedded signature
  */
 export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Uint8Array> {
-  const { template, investor, property, signature, coOwners } = options;
+  const { template, investor, property, signature, coOwners, language = "en" } = options;
 
   // Create a new PDF document
   const pdfDoc = await PDFDocument.create();
   
-  // Embed fonts
-  const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-  const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  // Embed fonts based on language
+  let bodyFont;
+  let headerFont;
+  let detailFont;
+  
+  if (language === "ar") {
+    // For Arabic, embed Noto Sans Arabic font
+    const arabicBytes = await getArabicFont();
+    const arabicFont = await pdfDoc.embedFont(arabicBytes);
+    bodyFont = arabicFont;
+    headerFont = arabicFont;
+    detailFont = arabicFont;
+  } else {
+    // For English, use standard fonts
+    bodyFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    headerFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    detailFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  }
 
   // Page settings
   const pageWidth = 595; // A4 width in points
   const pageHeight = 842; // A4 height in points
   const margin = 50;
   const contentWidth = pageWidth - (margin * 2);
+  
+  // RTL text alignment for Arabic
+  const isRTL = language === "ar";
 
   // Add first page
   let page = pdfDoc.addPage([pageWidth, pageHeight]);
   let yPosition = pageHeight - margin;
 
-  // Document header
-  page.drawText("FRACTIONAL OFF-PLAN DUBAI (FOPD)", {
-    x: margin,
+  // Document header - language specific
+  const headerText = isRTL ? "دبي للملكية الجزئية خارج الخطة (FOPD)" : "FRACTIONAL OFF-PLAN DUBAI (FOPD)";
+  const headerX = isRTL ? pageWidth - margin : margin;
+  
+  page.drawText(shapeArabicText(headerText, language), {
+    x: headerX,
     y: yPosition,
     size: 16,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0, 0, 0),
   });
   yPosition -= 25;
 
-  page.drawText(template.name, {
-    x: margin,
+  page.drawText(shapeArabicText(template.name, language), {
+    x: headerX,
     y: yPosition,
     size: 14,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0.2, 0.2, 0.2),
   });
   yPosition -= 35;
 
+  // Select content based on language
+  const templateContent = isRTL ? template.contentArabic : template.content;
+
   // Fill template content with actual data
   const filledContent = fillTemplatePlaceholders(
-    template.content,
+    templateContent,
     investor,
     property,
-    coOwners
+    coOwners,
+    language
   );
 
   // Split content into paragraphs
@@ -125,15 +246,15 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
 
     for (const word of words) {
       const testLine = line + word + ' ';
-      const testWidth = timesRomanFont.widthOfTextAtSize(testLine, fontSize);
+      const testWidth = bodyFont.widthOfTextAtSize(testLine, fontSize);
 
       if (testWidth > contentWidth && line.length > 0) {
         // Draw current line
-        page.drawText(line.trim(), {
+        page.drawText(shapeArabicText(line.trim(), language), {
           x: margin,
           y: yPosition,
           size: fontSize,
-          font: timesRomanFont,
+          font: bodyFont,
           color: rgb(0, 0, 0),
         });
         yPosition -= lineHeight;
@@ -151,11 +272,11 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
 
     // Draw remaining text in line
     if (line.trim()) {
-      page.drawText(line.trim(), {
+      page.drawText(shapeArabicText(line.trim(), language), {
         x: margin,
         y: yPosition,
         size: fontSize,
-        font: timesRomanFont,
+        font: bodyFont,
         color: rgb(0, 0, 0),
       });
       yPosition -= lineHeight;
@@ -179,12 +300,15 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
     yPosition = pageHeight - margin;
   }
 
-  // Signature header
-  page.drawText("ELECTRONICALLY SIGNED", {
-    x: margin,
+  // Signature header - language specific
+  const signatureHeaderText = isRTL ? "موقع إلكترونياً" : "ELECTRONICALLY SIGNED";
+  const signatureX = isRTL ? pageWidth - margin : margin;
+  
+  page.drawText(shapeArabicText(signatureHeaderText, language), {
+    x: signatureX,
     y: yPosition,
     size: 12,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0, 0, 0),
   });
   yPosition -= 25;
@@ -198,9 +322,10 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
     
     const signatureWidth = 200;
     const signatureHeight = 80;
+    const imgX = isRTL ? pageWidth - margin - signatureWidth : margin;
     
     page.drawImage(signatureImg, {
-      x: margin,
+      x: imgX,
       y: yPosition - signatureHeight,
       width: signatureWidth,
       height: signatureHeight,
@@ -210,48 +335,56 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
   } catch (error) {
     console.error("Failed to embed signature image:", error);
     // Fallback: just add text
-    page.drawText("[Digital Signature]", {
-      x: margin,
+    const fallbackText = isRTL ? "[توقيع رقمي]" : "[Digital Signature]";
+    page.drawText(shapeArabicText(fallbackText, language), {
+      x: signatureX,
       y: yPosition,
       size: 10,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.5, 0.5, 0.5),
     });
     yPosition -= 20;
   }
 
-  // Signer details
-  page.drawText(`Signed by: ${investor.fullName}`, {
-    x: margin,
+  // Signer details - language specific
+  const signedByLabel = isRTL ? `وقعه: ${investor.fullName}` : `Signed by: ${investor.fullName}`;
+  page.drawText(shapeArabicText(signedByLabel, language), {
+    x: signatureX,
     y: yPosition,
     size: 10,
-    font: helveticaFont,
+    font: detailFont,
     color: rgb(0.3, 0.3, 0.3),
   });
   yPosition -= 15;
 
-  page.drawText(`Date: ${signature.signedAt.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short'
-  })}`, {
-    x: margin,
+  const dateLabel = isRTL ? "التاريخ:" : "Date:";
+  const dateValue = isRTL 
+    ? formatArabicDate(signature.signedAt)
+    : signature.signedAt.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+      });
+  
+  page.drawText(shapeArabicText(`${dateLabel} ${dateValue}`, language), {
+    x: signatureX,
     y: yPosition,
     size: 10,
-    font: helveticaFont,
+    font: detailFont,
     color: rgb(0.3, 0.3, 0.3),
   });
   yPosition -= 15;
 
   if (signature.ipAddress) {
-    page.drawText(`IP Address: ${signature.ipAddress}`, {
-      x: margin,
+    const ipLabel = isRTL ? `عنوان IP: ${signature.ipAddress}` : `IP Address: ${signature.ipAddress}`;
+    page.drawText(shapeArabicText(ipLabel, language), {
+      x: signatureX,
       y: yPosition,
       size: 9,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.5, 0.5, 0.5),
     });
   }
@@ -260,19 +393,19 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
   const pages = pdfDoc.getPages();
   pages.forEach((page, index) => {
     const footerY = 30;
-    page.drawText(`Document ID: ${template.id} | Version ${template.version}`, {
+    page.drawText(shapeArabicText(`Document ID: ${template.id} | Version ${template.version}`, language), {
       x: margin,
       y: footerY,
       size: 8,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.6, 0.6, 0.6),
     });
     
-    page.drawText(`Page ${index + 1} of ${pages.length}`, {
+    page.drawText(shapeArabicText(`Page ${index + 1} of ${pages.length}`, language), {
       x: pageWidth - margin - 60,
       y: footerY,
       size: 8,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.6, 0.6, 0.6),
     });
   });
@@ -307,6 +440,7 @@ interface GenerateAggregatedPDFOptions {
   property: Property;
   signatures: InvestorSignatureData[];
   allInvestors: Investor[];
+  language?: "en" | "ar"; // Language for PDF generation
 }
 
 /**
@@ -314,17 +448,35 @@ interface GenerateAggregatedPDFOptions {
  * This creates ONE master PDF containing all signatures for a document type
  */
 export async function generateAggregatedPDF(options: GenerateAggregatedPDFOptions): Promise<Uint8Array> {
-  const { template, property, signatures, allInvestors } = options;
+  const { template, property, signatures, allInvestors, language = "en" } = options;
 
   if (signatures.length === 0) {
     throw new Error("No signatures provided for aggregated PDF");
   }
 
   const pdfDoc = await PDFDocument.create();
-  const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
-  const timesRomanBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-  const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  
+  // Embed fonts based on language
+  let bodyFont;
+  let headerFont;
+  let detailFont;
+  let boldFont;
+  
+  if (language === "ar") {
+    // For Arabic, embed Noto Sans Arabic font
+    const arabicBytes = await getArabicFont();
+    const arabicFont = await pdfDoc.embedFont(arabicBytes);
+    bodyFont = arabicFont;
+    headerFont = arabicFont;
+    detailFont = arabicFont;
+    boldFont = arabicFont;
+  } else {
+    // For English, use standard fonts
+    bodyFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+    headerFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    detailFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  }
 
   const pageWidth = 595;
   const pageHeight = 842;
@@ -335,29 +487,29 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
   let yPosition = pageHeight - margin;
 
   // Document header
-  page.drawText("FRACTIONAL OFF-PLAN DUBAI (FOPD)", {
+  page.drawText(shapeArabicText("FRACTIONAL OFF-PLAN DUBAI (FOPD)", language), {
     x: margin,
     y: yPosition,
     size: 16,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0, 0, 0),
   });
   yPosition -= 25;
 
-  page.drawText(template.name, {
+  page.drawText(shapeArabicText(template.name, language), {
     x: margin,
     y: yPosition,
     size: 14,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0.2, 0.2, 0.2),
   });
   yPosition -= 20;
 
-  page.drawText(`Multi-Party Agreement - ${signatures.length} Co-Owners`, {
+  page.drawText(shapeArabicText(`Multi-Party Agreement - ${signatures.length} Co-Owners`, language), {
     x: margin,
     y: yPosition,
     size: 10,
-    font: helveticaFont,
+    font: detailFont,
     color: rgb(0.4, 0.4, 0.4),
   });
   yPosition -= 35;
@@ -367,7 +519,8 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
     template.content,
     signatures[0].investor, // Primary investor for placeholders
     property,
-    allInvestors
+    allInvestors,
+    language
   );
 
   // Render content
@@ -383,14 +536,14 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
 
     for (const word of words) {
       const testLine = line + word + ' ';
-      const testWidth = timesRomanFont.widthOfTextAtSize(testLine, fontSize);
+      const testWidth = bodyFont.widthOfTextAtSize(testLine, fontSize);
 
       if (testWidth > contentWidth && line.length > 0) {
-        page.drawText(line.trim(), {
+        page.drawText(shapeArabicText(line.trim(), language), {
           x: margin,
           y: yPosition,
           size: fontSize,
-          font: timesRomanFont,
+          font: bodyFont,
           color: rgb(0, 0, 0),
         });
         yPosition -= lineHeight;
@@ -406,11 +559,11 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
     }
 
     if (line.trim()) {
-      page.drawText(line.trim(), {
+      page.drawText(shapeArabicText(line.trim(), language), {
         x: margin,
         y: yPosition,
         size: fontSize,
-        font: timesRomanFont,
+        font: bodyFont,
         color: rgb(0, 0, 0),
       });
       yPosition -= lineHeight;
@@ -431,29 +584,29 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
     yPosition = pageHeight - margin;
   }
 
-  page.drawText("ELECTRONICALLY SIGNED BY ALL PARTIES", {
+  page.drawText(shapeArabicText("ELECTRONICALLY SIGNED BY ALL PARTIES", language), {
     x: margin,
     y: yPosition,
     size: 12,
-    font: timesRomanBold,
+    font: headerFont,
     color: rgb(0, 0, 0),
   });
   yPosition -= 25;
 
-  page.drawText(`This document has been electronically signed by ${signatures.length} parties.`, {
+  page.drawText(shapeArabicText(`This document has been electronically signed by ${signatures.length} parties.`, language), {
     x: margin,
     y: yPosition,
     size: 10,
-    font: helveticaFont,
+    font: detailFont,
     color: rgb(0.3, 0.3, 0.3),
   });
   yPosition -= 20;
 
-  page.drawText("See certificate pages following this document for complete signature details.", {
+  page.drawText(shapeArabicText("See certificate pages following this document for complete signature details.", language), {
     x: margin,
     y: yPosition,
     size: 10,
-    font: helveticaFont,
+    font: detailFont,
     color: rgb(0.3, 0.3, 0.3),
   });
 
@@ -465,20 +618,20 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
     yPosition = pageHeight - margin;
 
     // Certificate header
-    page.drawText("SIGNATURE CERTIFICATE", {
+    page.drawText(shapeArabicText("SIGNATURE CERTIFICATE", language), {
       x: margin,
       y: yPosition,
       size: 18,
-      font: timesRomanBold,
+      font: headerFont,
       color: rgb(0, 0, 0),
     });
     yPosition -= 30;
 
-    page.drawText(`Signer ${i + 1} of ${signatures.length}`, {
+    page.drawText(shapeArabicText(`Signer ${i + 1} of ${signatures.length}`, language), {
       x: margin,
       y: yPosition,
       size: 12,
-      font: helveticaBold,
+      font: boldFont,
       color: rgb(0.2, 0.2, 0.2),
     });
     yPosition -= 40;
@@ -495,20 +648,20 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
     ];
 
     for (const item of infoItems) {
-      page.drawText(item.label + ":", {
+      page.drawText(shapeArabicText(item.label + ":", language), {
         x: margin,
         y: yPosition,
         size: 10,
-        font: helveticaBold,
+        font: boldFont,
         color: rgb(0, 0, 0),
       });
       yPosition -= 15;
 
-      page.drawText(item.value, {
+      page.drawText(shapeArabicText(item.value, language), {
         x: margin + 20,
         y: yPosition,
         size: 10,
-        font: helveticaFont,
+        font: detailFont,
         color: rgb(0.3, 0.3, 0.3),
       });
       yPosition -= 25;
@@ -525,11 +678,11 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
       const signatureWidth = 250;
       const signatureHeight = 100;
 
-      page.drawText("Digital Signature:", {
+      page.drawText(shapeArabicText("Digital Signature:", language), {
         x: margin,
         y: yPosition,
         size: 10,
-        font: helveticaBold,
+        font: boldFont,
         color: rgb(0, 0, 0),
       });
       yPosition -= 120;
@@ -543,11 +696,11 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
       yPosition -= 30;
     } catch (error) {
       console.error("Failed to embed signature image:", error);
-      page.drawText("[Digital Signature - Image Unavailable]", {
+      page.drawText(shapeArabicText("[Digital Signature - Image Unavailable]", language), {
         x: margin,
         y: yPosition,
         size: 10,
-        font: helveticaFont,
+        font: detailFont,
         color: rgb(0.5, 0.5, 0.5),
       });
       yPosition -= 40;
@@ -555,11 +708,11 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
 
     // Certificate footer
     yPosition -= 20;
-    page.drawText("This certificate verifies the authenticity of the electronic signature.", {
+    page.drawText(shapeArabicText("This certificate verifies the authenticity of the electronic signature.", language), {
       x: margin,
       y: yPosition,
       size: 9,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.5, 0.5, 0.5),
     });
   }
@@ -568,19 +721,19 @@ export async function generateAggregatedPDF(options: GenerateAggregatedPDFOption
   const pages = pdfDoc.getPages();
   pages.forEach((page, index) => {
     const footerY = 30;
-    page.drawText(`Document ID: ${template.id} | Version ${template.version}`, {
+    page.drawText(shapeArabicText(`Document ID: ${template.id} | Version ${template.version}`, language), {
       x: margin,
       y: footerY,
       size: 8,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.6, 0.6, 0.6),
     });
     
-    page.drawText(`Page ${index + 1} of ${pages.length}`, {
+    page.drawText(shapeArabicText(`Page ${index + 1} of ${pages.length}`, language), {
       x: pageWidth - margin - 60,
       y: footerY,
       size: 8,
-      font: helveticaFont,
+      font: detailFont,
       color: rgb(0.6, 0.6, 0.6),
     });
   });

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -13,6 +14,7 @@ import type { AgreementTemplate } from "@shared/schema";
 export function AdminTemplates() {
   const [editingTemplate, setEditingTemplate] = useState<AgreementTemplate | null>(null);
   const [editedContent, setEditedContent] = useState("");
+  const [editedContentArabic, setEditedContentArabic] = useState("");
   const { toast } = useToast();
 
   const { data: templates = [], isLoading } = useQuery<AgreementTemplate[]>({
@@ -20,14 +22,15 @@ export function AdminTemplates() {
   });
 
   const updateTemplateMutation = useMutation({
-    mutationFn: async ({ id, content }: { id: string; content: string }) => {
-      const res = await apiRequest("PUT", `/api/admin/templates/${id}`, { content });
+    mutationFn: async ({ id, content, contentArabic }: { id: string; content: string; contentArabic: string }) => {
+      const res = await apiRequest("PUT", `/api/admin/templates/${id}`, { content, contentArabic });
       return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
       setEditingTemplate(null);
       setEditedContent("");
+      setEditedContentArabic("");
       toast({
         title: "Template Updated",
         description: "The agreement template has been saved successfully",
@@ -45,6 +48,7 @@ export function AdminTemplates() {
   const handleEditClick = (template: AgreementTemplate) => {
     setEditingTemplate(template);
     setEditedContent(template.content);
+    setEditedContentArabic(template.contentArabic || "");
   };
 
   const handleSave = () => {
@@ -52,6 +56,7 @@ export function AdminTemplates() {
     updateTemplateMutation.mutate({
       id: editingTemplate.id,
       content: editedContent,
+      contentArabic: editedContentArabic,
     });
   };
 
@@ -155,22 +160,45 @@ export function AdminTemplates() {
 
       {editingTemplate && (
         <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
-          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Edit {editingTemplate.name}</DialogTitle>
               <DialogDescription>
                 Changes will create a new version (v{editingTemplate.version + 1}) and update
-                the content hash for tamper detection.
+                the content hash for tamper detection. Both English and Arabic versions are required.
               </DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto">
-              <Textarea
-                value={editedContent}
-                onChange={(e) => setEditedContent(e.target.value)}
-                className="min-h-[500px] font-mono text-sm"
-                placeholder="Enter agreement content with placeholders like {{INVESTOR_NAME}}, {{PROPERTY_TITLE}}, etc."
-                data-testid="textarea-template-content"
-              />
+              <Tabs defaultValue="english" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="english" data-testid="tab-english">
+                    English
+                  </TabsTrigger>
+                  <TabsTrigger value="arabic" data-testid="tab-arabic">
+                    Arabic (العربية)
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="english" className="mt-4">
+                  <Textarea
+                    value={editedContent}
+                    onChange={(e) => setEditedContent(e.target.value)}
+                    className="min-h-[500px] font-mono text-sm"
+                    placeholder="Enter agreement content with placeholders like {INVESTOR_NAME}, {PROPERTY_TITLE}, etc."
+                    data-testid="textarea-template-content-english"
+                  />
+                </TabsContent>
+                
+                <TabsContent value="arabic" className="mt-4" dir="rtl">
+                  <Textarea
+                    value={editedContentArabic}
+                    onChange={(e) => setEditedContentArabic(e.target.value)}
+                    className="min-h-[500px] font-mono text-sm text-right"
+                    placeholder="أدخل محتوى الاتفاقية مع العناصر النائبة مثل {INVESTOR_NAME}، {PROPERTY_TITLE}، إلخ."
+                    data-testid="textarea-template-content-arabic"
+                  />
+                </TabsContent>
+              </Tabs>
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t">
               <Button
@@ -183,11 +211,14 @@ export function AdminTemplates() {
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={updateTemplateMutation.isPending || editedContent === editingTemplate.content}
+                disabled={
+                  updateTemplateMutation.isPending || 
+                  (editedContent === editingTemplate.content && editedContentArabic === editingTemplate.contentArabic)
+                }
                 data-testid="button-save-template"
               >
                 <Save className="h-4 w-4 mr-2" />
-                {updateTemplateMutation.isPending ? "Saving..." : "Save Template"}
+                {updateTemplateMutation.isPending ? "Saving..." : "Save Both Languages"}
               </Button>
             </div>
           </DialogContent>

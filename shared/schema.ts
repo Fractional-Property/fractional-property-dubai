@@ -18,6 +18,7 @@ export const investors = pgTable("investors", {
   proofOfAddressPath: text("proof_of_address_path"),
   bankStatementPath: text("bank_statement_path"),
   documentsUploadedAt: timestamp("documents_uploaded_at"),
+  preferredLanguage: varchar("preferred_language").notNull().default("en"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -76,8 +77,10 @@ export const agreementTemplates = pgTable("agreement_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   templateType: text("template_type").notNull(), // "co_ownership" | "power_of_attorney" | "jop_declaration"
-  content: text("content").notNull(), // Rich text content with placeholders
+  content: text("content").notNull(), // Rich text content with placeholders (English)
   contentHash: text("content_hash").notNull(), // SHA-256 hash for integrity
+  contentArabic: text("content_arabic").notNull(), // Arabic content with placeholders
+  contentHashArabic: text("content_hash_arabic").notNull(), // SHA-256 hash for Arabic content
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   templatePdfPath: text("template_pdf_path"), // Optional: Pre-approved PDF template
@@ -202,10 +205,12 @@ export const insertAgreementTemplateSchema = createInsertSchema(agreementTemplat
   updatedAt: true,
   version: true,
   contentHash: true,
+  contentHashArabic: true,
 }).extend({
   name: z.string().min(1, "Template name is required"),
-  content: z.string().min(10, "Content must be at least 10 characters"),
-  templateType: z.enum(["co_ownership", "power_of_attorney"]),
+  content: z.string().min(10, "English content must be at least 10 characters"),
+  contentArabic: z.string().min(10, "Arabic content must be at least 10 characters"),
+  templateType: z.enum(["co_ownership", "power_of_attorney", "jop_declaration"]),
 });
 
 export const insertSignatureSessionSchema = createInsertSchema(signatureSessions).omit({
