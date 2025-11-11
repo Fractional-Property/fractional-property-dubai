@@ -434,6 +434,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userAgent,
       });
 
+      // Generate OTP for signature session verification
+      const otp = generateOTP();
+      otpStore.set(session.sessionToken, {
+        otp,
+        expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+      });
+
+      // Get investor email for OTP display
+      const investor = await storage.getInvestorById(investorId);
+      console.log(`Signature OTP for ${investor?.email || 'investor'}: ${otp}`);
+
       res.json({ sessionId: session.id, sessionToken: session.sessionToken });
     } catch (error: any) {
       console.error("Failed to create signature session:", error);
@@ -445,11 +456,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { sessionToken, otp } = req.body;
       
+      // Check OTP from in-memory store
+      const storedOTP = otpStore.get(sessionToken);
+      
+      if (!storedOTP) {
+        return res.status(400).json({ message: "No OTP found for this session. Please try again." });
+      }
+      
+      if (storedOTP.expiresAt < Date.now()) {
+        otpStore.delete(sessionToken);
+        return res.status(400).json({ message: "OTP has expired. Please create a new session." });
+      }
+      
+      if (storedOTP.otp !== otp) {
+        return res.status(400).json({ message: "Invalid OTP. Please check and try again." });
+      }
+      
+      // OTP is valid - update session status in database
       const session = await storage.verifySignatureSession(sessionToken, otp);
       
       if (!session) {
-        return res.status(400).json({ message: "Invalid session or OTP" });
+        return res.status(400).json({ message: "Session not found" });
       }
+
+      // Remove OTP from store after successful verification
+      otpStore.delete(sessionToken);
 
       res.json({ success: true, sessionId: session.id });
     } catch (error: any) {

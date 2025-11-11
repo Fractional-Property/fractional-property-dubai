@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import SignaturePad from "signature_pad";
-import { X, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { X, Download, CheckCircle, AlertCircle, Loader2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -18,9 +19,10 @@ interface SignatureModalProps {
 }
 
 export function SignatureModal({ isOpen, onClose, template, investorId, propertyId, onSignComplete }: SignatureModalProps) {
-  const [currentView, setCurrentView] = useState<"preview" | "sign" | "success">("preview");
+  const [currentView, setCurrentView] = useState<"preview" | "verify-otp" | "sign" | "success">("preview");
   const [signaturePad, setSignaturePad] = useState<SignaturePad | null>(null);
   const [sessionToken, setSessionToken] = useState<string>("");
+  const [otp, setOtp] = useState<string>("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
@@ -43,6 +45,32 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
         description: error.message || "Failed to create signature session. Please try again.",
         variant: "destructive"
       });
+    }
+  });
+
+  // Verify OTP mutation
+  const verifyOTPMutation = useMutation({
+    mutationFn: async (otpCode: string) => {
+      const res = await apiRequest("POST", "/api/signatures/verify-session", {
+        sessionToken,
+        otp: otpCode
+      });
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "OTP Verified",
+        description: "Signature session verified successfully",
+      });
+      setCurrentView("sign");
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Verification Failed",
+        description: error.message || "Invalid OTP. Please try again.",
+        variant: "destructive"
+      });
+      setOtp(""); // Reset OTP input
     }
   });
 
@@ -128,6 +156,7 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
     // Reset all modal state
     setCurrentView("preview");
     setSessionToken("");
+    setOtp("");
     if (signaturePad) {
       signaturePad.clear();
       setSignaturePad(null);
@@ -136,7 +165,7 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
     onClose();
   };
 
-  const handleProceedToSign = () => {
+  const handleProceedToOTP = () => {
     if (!sessionToken) {
       toast({
         title: "Session Not Ready",
@@ -145,7 +174,19 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
       });
       return;
     }
-    setCurrentView("sign");
+    setCurrentView("verify-otp");
+  };
+
+  const handleVerifyOTP = () => {
+    if (otp.length !== 6) {
+      toast({
+        title: "Invalid OTP",
+        description: "Please enter a 6-digit verification code.",
+        variant: "destructive"
+      });
+      return;
+    }
+    verifyOTPMutation.mutate(otp);
   };
 
   return (
@@ -157,6 +198,7 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
               <DialogTitle className="text-2xl font-serif">{template.name}</DialogTitle>
               <DialogDescription>
                 {currentView === "preview" && "Review the document carefully before signing"}
+                {currentView === "verify-otp" && "Enter the verification code sent to your email"}
                 {currentView === "sign" && "Draw your signature in the box below"}
                 {currentView === "success" && "Document signed successfully"}
               </DialogDescription>
@@ -210,7 +252,7 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
                 Cancel
               </Button>
               <Button 
-                onClick={handleProceedToSign} 
+                onClick={handleProceedToOTP} 
                 size="lg" 
                 disabled={createSessionMutation.isPending || !sessionToken}
                 data-testid="button-proceed-to-sign"
@@ -221,7 +263,87 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
                     Preparing...
                   </>
                 ) : (
-                  "Proceed to Sign"
+                  "I Agree & Continue"
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {currentView === "verify-otp" && (
+          <div className="space-y-6">
+            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+              <div className="flex gap-3 items-start">
+                <Shield className="h-6 w-6 text-blue-600 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                    Verification Required
+                  </h3>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
+                    A 6-digit verification code has been sent to your email. Please enter it below to proceed with signing.
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Check your console for the OTP code (development mode)
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center space-y-4">
+              <label className="text-sm font-medium">Enter Verification Code</label>
+              <InputOTP
+                maxLength={6}
+                value={otp}
+                onChange={(value) => setOtp(value)}
+                data-testid="input-otp-signature"
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+              <p className="text-xs text-muted-foreground">
+                Didn't receive the code? Check your spam folder or try again.
+              </p>
+            </div>
+
+            {verifyOTPMutation.isError && (
+              <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-red-900 dark:text-red-100 mb-1">
+                      Verification Failed
+                    </p>
+                    <p className="text-red-700 dark:text-red-300">
+                      Invalid OTP. Please check the code and try again.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end">
+              <Button variant="outline" onClick={() => setCurrentView("preview")} data-testid="button-back-to-preview-from-otp">
+                Back
+              </Button>
+              <Button 
+                onClick={handleVerifyOTP} 
+                size="lg" 
+                disabled={verifyOTPMutation.isPending || otp.length !== 6}
+                data-testid="button-verify-otp"
+              >
+                {verifyOTPMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  "Verify & Continue"
                 )}
               </Button>
             </div>
