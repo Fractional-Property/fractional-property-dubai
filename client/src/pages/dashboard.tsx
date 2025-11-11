@@ -208,7 +208,10 @@ export default function Dashboard() {
             />
 
             {/* Multi-Step Signature Workflow */}
-            <SignatureWorkflow investorId={currentInvestor?.id || ""} />
+            <SignatureWorkflow 
+              investorId={currentInvestor?.id || ""} 
+              propertyId={pilotProperty?.id || ""}
+            />
 
             <Card className="border-primary/20 bg-primary/5">
               <CardHeader>

@@ -11,6 +11,7 @@ import type { AgreementTemplate } from "@shared/schema";
 
 interface SignatureWorkflowProps {
   investorId: string;
+  propertyId: string;
 }
 
 type DocumentStep = {
@@ -21,7 +22,7 @@ type DocumentStep = {
   status: "pending" | "in_progress" | "completed";
 };
 
-export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
+export function SignatureWorkflow({ investorId, propertyId }: SignatureWorkflowProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<AgreementTemplate | null>(null);
   
@@ -247,7 +248,7 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
           onClose={() => setIsModalOpen(false)}
           template={selectedTemplate}
           investorId={investorId}
-          propertyId="pilot-property-jvc-001"
+          propertyId={propertyId}
           onSignComplete={handleSignComplete}
         />
       )}

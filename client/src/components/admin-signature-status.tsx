@@ -6,6 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Circle, Download, FileText, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import type { Property } from "@shared/schema";
 
 interface PropertySignatureStatus {
   propertyId: string;
@@ -23,10 +24,17 @@ interface PropertySignatureStatus {
 
 export function AdminSignatureStatus() {
   const { toast } = useToast();
-  const propertyId = "pilot-property-jvc-001";
+  
+  // Fetch the pilot property to get the real property ID
+  const { data: pilotProperty } = useQuery<Property>({
+    queryKey: ["/api/properties/pilot"],
+  });
+  
+  const propertyId = pilotProperty?.id || "";
   
   const { data: signatureStatus, isLoading } = useQuery<PropertySignatureStatus>({
     queryKey: ["/api/signatures/property", propertyId, "status"],
+    enabled: !!propertyId, // Only run when we have the property ID
   });
 
   // Mutation for generating PDFs
