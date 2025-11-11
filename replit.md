@@ -98,16 +98,49 @@ Preferred communication style: Simple, everyday language.
 
 **Encryption**: Signatures encrypted using AES-256-GCM with authentication tags. Encryption key derived from SESSION_SECRET using scrypt. All sensitive data stored encrypted with SHA-256 hashes for verification.
 
-**Template Management**: Admin dashboard allows editing three legal agreement templates:
-1. Co-Ownership Agreement - Defines fractional ownership rights and obligations
-2. Irrevocable Power of Attorney - Developer authorization for DLD processes
-3. Jointly Owned Property Declaration (JOPD) - DLD Article 6 compliant declaration for 4-party co-ownership
+**Template Management**: Admin dashboard allows editing three legal agreement templates in both English and Arabic:
+1. Co-Ownership Agreement (اتفاقية الملكية المشتركة) - Defines fractional ownership rights and obligations
+2. Irrevocable Power of Attorney (توكيل غير قابل للإلغاء) - Developer authorization for DLD processes
+3. Jointly Owned Property Declaration / JOPD (إقرار الملكية المشتركة) - DLD Article 6 compliant declaration for 4-party co-ownership
 
-Each edit increments version number and updates SHA-256 content hash for tamper detection.
+Each template stores separate English and Arabic content with independent SHA-256 hashes. Edits increment version number and update content hashes for tamper detection.
 
 **Multi-Party Signing**: System supports 4 co-owners signing same document. Signer assignments track roles, signing order, and completion status. Final document generated only when all signatures collected.
+
+**Bilingual Support**: Full English/Arabic language support for all legal documents:
+- Dual-column schema with `content` and `contentArabic` fields
+- Investor language preference (default: English) stored in database
+- PDF generation respects language selection
+- Arabic text properly shaped using arabic-reshaper for glyph connection
+- Bidirectional text handling via bidi-js preserves number order
+- Noto Sans Arabic font embedded for proper Arabic rendering
+- Admin template editor with tabbed English/Arabic interface (RTL support)
+
+**PDF Generation Service**: Production-ready document generation using pdf-lib:
+- Generates signed PDFs with embedded investor signatures
+- Language-aware content selection and formatting
+- Arabic support: RTL text, proper glyph shaping, number preservation
+- Professional layout with headers, footers, metadata
+- HiDPI signature canvas (2x scaling) for crisp rendering
+- File persistence to `/uploads/signed-documents` directory
+- SHA-256 file integrity hashing
+- Admin download capability with real investor ID tracking
+
+**DLD Filing Export**: Automated bundle generation for Dubai Land Department submission:
+- Triggered when all 4 co-owners complete all 3 documents
+- Generates consolidated PDFs (one master PDF per document with all 4 signatures)
+- Certificate pages appended with signer metadata (name, ID, timestamp, IP, hash)
+- CSV export with co-owner data (property details, investor info, KYC data, signature metadata)
+- ZIP bundle structure: `documents/` folder (3 PDFs) + `data/` folder (CSV) + `metadata.json`
+- Handover deadline calculation (property handover date + 60 days per JOPD Article 4)
+- Export audit trail tracked in `dldExports` table
+- SHA-256 hashing of all bundle files
 
 **Libraries**: 
 - pdf-lib: PDF generation and manipulation
 - signature_pad: Browser-based signature capture
+- arabic-reshaper: Arabic glyph shaping and connection
+- bidi-js: Unicode bidirectional algorithm for RTL text
+- archiver: ZIP file creation for DLD bundles
 - Node crypto module: AES-256-GCM encryption, SHA-256 hashing, secure token generation
+- Noto Sans Arabic font: Embedded font for Arabic character rendering
