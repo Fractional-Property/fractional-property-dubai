@@ -33,11 +33,13 @@ declare global {
     }
   }
 }
-app.use(express.json({
-  verify: (req, _res, buf) => {
-    req.rawBody = buf;
-  }
-}));
+
+// CRITICAL SECURITY: Capture raw body for webhook signature verification
+// This must come BEFORE express.json() to preserve the exact bytes sent by Tap Payment
+app.use('/api/tap-payment/webhook', express.raw({ type: 'application/json' }));
+
+// Regular JSON parsing for all other routes
+app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 app.use(session({

@@ -43,6 +43,9 @@ async function requireInvestorAuth(req: Request, res: Response, next: NextFuncti
 }
 
 // Simple in-memory rate limiter for public endpoints
+// NOTE: Current rate limiting is in-memory and per-process. For production horizontal scaling,
+// migrate to Redis-backed rate limiting with keys like `${ip}:${endpoint}:${timestamp}`.
+// Consider using express-rate-limit with rate-limit-redis adapter.
 const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
 
 function rateLimitMiddleware(maxRequests: number = 10, windowMs: number = 60000) {
@@ -324,19 +327,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "Missing webhook signature" });
       }
       
-      // Calculate expected signature using HMAC SHA-256
+      // Validate signature format (must be 64-char lowercase hex for SHA-256)
+      if (!/^[a-f0-9]{64}$/.test(signature)) {
+        console.error("Webhook rejected: Invalid signature format");
+        return res.status(401).json({ message: "Invalid signature format" });
+      }
+      
+      // Get raw body (Buffer from express.raw() middleware)
+      const rawBody = req.body as Buffer;
+      
+      // Calculate HMAC over raw body bytes (not stringified JSON)
       const crypto = require('crypto');
       const hmac = crypto.createHmac('sha256', process.env.TAP_SECRET_KEY || '');
-      hmac.update(JSON.stringify(req.body));
+      hmac.update(rawBody);
       const expectedSignature = hmac.digest('hex');
       
-      // Use timing-safe comparison to prevent timing attacks
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
-        console.error("Webhook rejected: Invalid signature");
+      // Timing-safe comparison with equal-length buffers
+      const signatureBuffer = Buffer.from(signature, 'hex');
+      const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+      
+      if (signatureBuffer.length !== expectedBuffer.length ||
+          !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+        console.error("Webhook rejected: Signature mismatch");
         return res.status(401).json({ message: "Invalid webhook signature" });
       }
-
-      const charge = req.body;
+      
+      // Parse JSON AFTER signature verification
+      const charge = JSON.parse(rawBody.toString('utf8'));
 
       if (charge.status === "CAPTURED") {
         const { investorId, propertyId } = charge.metadata;

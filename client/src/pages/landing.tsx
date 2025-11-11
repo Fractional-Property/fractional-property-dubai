@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Shield, Lock, FileCheck, Building2, Users, TrendingUp, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ReservationModal } from "@/components/reservation-modal";
+import type { Property } from "@shared/schema";
 import heroImage from "@assets/generated_images/Dubai_JVC_apartment_hero_image_7b4e97ad.png";
 import buildingImage from "@assets/generated_images/JVC_building_exterior_view_c11476b3.png";
 import bedroomImage from "@assets/generated_images/Bedroom_interior_Dubai_apartment_34062977.png";
@@ -11,6 +13,10 @@ import kitchenImage from "@assets/generated_images/Modern_Dubai_apartment_kitche
 
 export default function Landing() {
   const [isReservationOpen, setIsReservationOpen] = useState(false);
+
+  const { data: pilotProperty } = useQuery<Property>({
+    queryKey: ["/api/properties/pilot"],
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -35,8 +41,10 @@ export default function Landing() {
             <Button variant="ghost" size="sm" asChild data-testid="button-login">
               <a href="/dashboard">Investor Login</a>
             </Button>
-            <Button size="sm" onClick={() => setIsReservationOpen(true)} data-testid="button-reserve-hero">
-              Reserve Your Share
+            <Button size="sm" asChild data-testid="button-reserve-hero">
+              <a href={pilotProperty ? `/properties/${pilotProperty.id}/express-interest` : "#"}>
+                Reserve Your Share
+              </a>
             </Button>
           </div>
         </div>
@@ -63,9 +71,11 @@ export default function Landing() {
             </p>
             
             <div className="flex flex-wrap gap-4 mb-12">
-              <Button size="lg" onClick={() => setIsReservationOpen(true)} className="text-lg h-14 px-8" data-testid="button-reserve-cta">
-                Reserve Your Share
-                <ChevronRight className="ml-2 h-5 w-5" />
+              <Button size="lg" asChild className="text-lg h-14 px-8" data-testid="button-reserve-cta">
+                <a href={pilotProperty ? `/properties/${pilotProperty.id}/express-interest` : "#"}>
+                  Reserve Your Share
+                  <ChevronRight className="ml-2 h-5 w-5" />
+                </a>
               </Button>
               <Button size="lg" variant="outline" className="text-lg h-14 px-8" asChild data-testid="button-view-pilot">
                 <a href="#pilot-unit">View Pilot Unit</a>

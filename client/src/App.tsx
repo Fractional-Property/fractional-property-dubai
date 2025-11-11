@@ -7,6 +7,8 @@ import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import Payment from "@/pages/payment";
 import Admin from "@/pages/admin";
+import ExpressInterest from "@/pages/express-interest";
+import ReservationDetails from "@/pages/reservation-details";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -16,6 +18,8 @@ function Router() {
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/payment" component={Payment} />
       <Route path="/admin" component={Admin} />
+      <Route path="/properties/:propertyId/express-interest" component={ExpressInterest} />
+      <Route path="/reservations/:reservationId" component={ReservationDetails} />
       <Route component={NotFound} />
     </Switch>
   );

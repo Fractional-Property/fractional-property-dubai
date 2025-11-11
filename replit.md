@@ -49,7 +49,7 @@ Preferred communication style: Simple, everyday language.
 **ORM**: Drizzle ORM for type-safe database queries and schema management. Schema includes:
 - `investors` - Investor profiles with KYC and payment status tracking
 - `properties` - Real estate listings with fractional ownership configuration
-- `fractions` - Individual fraction ownership records linking investors to properties
+- `fractions` - Individual fraction ownership records linking investors to properties (post-payment ownership)
 - `payments` - Payment transaction records with Tap Payments integration
 - `adminUsers` - Admin user accounts
 - `agreementTemplates` - Versioned legal agreement templates (Co-Ownership Agreement, Power of Attorney) with SHA-256 checksums
@@ -58,6 +58,9 @@ Preferred communication style: Simple, everyday language.
 - `investorSignatures` - Encrypted investor signatures with audit trail (SHA-256 hashes, IP, timestamps)
 - `signedDocuments` - Generated PDFs with file hashes and completion status
 - `signatureAuditLog` - Immutable audit trail for all signing activities
+- `propertyReservations` - Co-ownership reservations tracking investor interest and status (draft → invitations_sent → all_signed → payment_pending → payment_complete)
+- `coOwnerSlots` - Individual share allocations within reservations (1-4 slots per property, share percentages must total 100%)
+- `coOwnerInvitations` - Email invitations for co-owners with secure tokens and 7-day expiry
 
 **Schema Design**: All tables use UUID primary keys with automatic generation. Decimal types with precision controls are used for monetary values (12,2 precision). Status fields use text enums for KYC status (pending/approved/rejected) and payment status tracking.
 

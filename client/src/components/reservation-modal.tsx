@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, ChevronRight, ChevronLeft } from "lucide-react";
 import { insertInvestorSchema, type InsertInvestor } from "@shared/schema";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -81,6 +81,9 @@ export function ReservationModal({ open, onOpenChange }: ReservationModalProps) 
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-serif">Reserve Your Fraction</DialogTitle>
+          <DialogDescription>
+            Complete the steps below to reserve your share in this property
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
