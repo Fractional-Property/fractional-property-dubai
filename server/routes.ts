@@ -490,21 +490,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/documents/generate/:propertyId/:documentType", async (req, res) => {
-    try {
-      const { propertyId, documentType } = req.params;
-      const document = await storage.generateSignedDocument(propertyId, documentType);
-      
-      res.json({ 
-        success: true, 
-        documentId: document.id,
-        downloadUrl: `/api/documents/download/${document.id}`
-      });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
   // PRODUCTION-HARDENED signature submission endpoint with session-based authentication
   app.post("/api/signatures/submit-signature", async (req, res) => {
     try {
@@ -619,6 +604,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const status = await storage.getPropertySignatureStatus(propertyId);
       
       res.json(status);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Generate PDF for a signed document
+  app.post("/api/documents/generate", async (req, res) => {
+    try {
+      const { propertyId, documentType, investorId } = req.body;
+
+      if (!propertyId || !documentType || !investorId) {
+        return res.status(400).json({ 
+          message: "Missing required fields: propertyId, documentType, investorId" 
+        });
+      }
+
+      // Generate the PDF document
+      const document = await storage.generateSignedDocument(
+        propertyId,
+        documentType,
+        investorId
+      );
+
+      res.json({
+        success: true,
+        document: {
+          id: document.id,
+          filePath: document.filePath,
+          fileHash: document.fileHash,
+          documentType: document.documentType,
+          generatedAt: document.generatedAt,
+        }
+      });
+    } catch (error: any) {
+      console.error("PDF generation error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Download a generated PDF document
+  app.get("/api/documents/:documentId/download", async (req, res) => {
+    try {
+      const { documentId } = req.params;
+
+      // Get document from database
+      const document = await storage.getSignedDocumentById(documentId);
+
+      if (!document) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+
+      // Check if file exists
+      if (!fs.existsSync(document.filePath)) {
+        return res.status(404).json({ message: "PDF file not found on disk" });
+      }
+
+      // Extract filename from path
+      const filename = path.basename(document.filePath);
+
+      // Set headers for PDF download
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+      // Stream the PDF file
+      const fileStream = fs.createReadStream(document.filePath);
+      fileStream.pipe(res);
+    } catch (error: any) {
+      console.error("PDF download error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get all signed documents for a property
+  app.get("/api/documents/property/:propertyId", async (req, res) => {
+    try {
+      const { propertyId } = req.params;
+      const documents = await storage.getSignedDocuments(propertyId);
+
+      res.json({ documents });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

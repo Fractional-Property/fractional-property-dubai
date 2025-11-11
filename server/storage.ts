@@ -11,6 +11,9 @@ import type {
 import { eq, desc, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { encryptData, decryptData, generateHash, generateSecureToken, getServerTimestamp } from "./lib/crypto";
+import { generateSignedPDF, generateDocumentFilename } from "./lib/pdf-generator";
+import { promises as fs } from "fs";
+import path from "path";
 
 export interface IStorage {
   createInvestor(investor: InsertInvestor): Promise<Investor>;
@@ -50,7 +53,8 @@ export interface IStorage {
   getPropertySignatureStatus(propertyId: string): Promise<any>;
   
   getSignedDocuments(propertyId: string): Promise<SignedDocument[]>;
-  generateSignedDocument(propertyId: string, documentType: string): Promise<SignedDocument>;
+  getSignedDocumentById(id: string): Promise<SignedDocument | undefined>;
+  generateSignedDocument(propertyId: string, documentType: string, investorId: string): Promise<SignedDocument>;
 }
 
 export class DbStorage implements IStorage {
@@ -419,7 +423,7 @@ export class DbStorage implements IStorage {
       return {
         templateId: template.id,
         templateName: template.name,
-        documentType: template.documentType,
+        documentType: template.templateType,
         signedCount: distinctInvestorCount,
         totalRequired: 4,
         isComplete: distinctInvestorCount >= 4,
@@ -442,30 +446,158 @@ export class DbStorage implements IStorage {
       .where(eq(signedDocuments.propertyId, propertyId));
   }
 
-  async generateSignedDocument(propertyId: string, documentType: string): Promise<SignedDocument> {
-    console.log(`Generating signed document for property ${propertyId}, type: ${documentType}`);
-    
-    const filePath = `/uploads/signed-documents/${propertyId}-${documentType}-${Date.now()}.pdf`;
-    const fileHash = generateHash(`${propertyId}-${documentType}-${Date.now()}`);
+  async getSignedDocumentById(id: string): Promise<SignedDocument | undefined> {
+    const [document] = await db
+      .select()
+      .from(signedDocuments)
+      .where(eq(signedDocuments.id, id));
+    return document;
+  }
 
+  async generateSignedDocument(propertyId: string, documentType: string, investorId: string): Promise<SignedDocument> {
+    console.log(`Generating signed document for property ${propertyId}, type: ${documentType}, investor: ${investorId}`);
+    
+    // Get template for this document type
+    const templates = await this.getAllTemplates();
+    const template = templates.find(t => t.templateType === documentType);
+    if (!template) {
+      throw new Error(`Template not found for type: ${documentType}`);
+    }
+
+    // Fetch property
+    const property = await this.getPropertyById(propertyId);
+    if (!property) {
+      throw new Error(`Property not found: ${propertyId}`);
+    }
+
+    // Get signatures for this document
+    const signatures = await db
+      .select()
+      .from(investorSignatures)
+      .where(
+        and(
+          eq(investorSignatures.propertyId, propertyId),
+          eq(investorSignatures.templateId, template.id)
+        )
+      );
+
+    if (signatures.length === 0) {
+      throw new Error(`No signatures found for property ${propertyId} and document type ${documentType}`);
+    }
+
+    // Get unique investors and count
+    const uniqueInvestors = new Set(signatures.map(sig => sig.investorId));
+    const signersCompleted = uniqueInvestors.size;
+    const allComplete = signersCompleted >= 4;
+
+    // Get the specified investor for PDF generation
+    const investor = await this.getInvestorById(investorId);
+    if (!investor) {
+      throw new Error(`Investor not found: ${investorId}`);
+    }
+
+    // Find this investor's signature for this document
+    const investorSignature = signatures.find(sig => sig.investorId === investorId);
+    if (!investorSignature) {
+      throw new Error(`Signature not found for investor ${investorId} on document ${documentType}`);
+    }
+
+    // Decrypt signature data
+    let decryptedSignatureData: string;
+    try {
+      decryptedSignatureData = decryptData(investorSignature.encryptedSignatureData);
+    } catch (error) {
+      console.error("Failed to decrypt signature data:", error);
+      throw new Error("Failed to decrypt signature data");
+    }
+
+    // Get co-owners if this is a JOP Declaration (all other investors who signed)
+    let coOwners: Investor[] = [];
+    if (documentType === "jop_declaration" && signatures.length > 1) {
+      const coOwnerIds = Array.from(uniqueInvestors).filter(id => id !== investor.id);
+      coOwners = await Promise.all(
+        coOwnerIds.map(async (id) => {
+          const coOwner = await this.getInvestorById(id);
+          if (!coOwner) {
+            console.warn(`Co-owner not found: ${id}`);
+            return null;
+          }
+          return coOwner;
+        })
+      ).then(results => results.filter((co): co is Investor => co !== null));
+    }
+
+    // Generate PDF with embedded signature
+    let pdfBytes: Uint8Array;
+    try {
+      pdfBytes = await generateSignedPDF({
+        template,
+        investor,
+        property,
+        signature: {
+          signatureImage: decryptedSignatureData,
+          signedAt: investorSignature.signedAt,
+          ipAddress: investorSignature.ipAddress || undefined,
+        },
+        coOwners: coOwners.length > 0 ? coOwners : undefined,
+      });
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      throw new Error(`Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    // Create directory if it doesn't exist
+    const uploadsDir = path.join(process.cwd(), "uploads", "signed-documents");
+    try {
+      await fs.mkdir(uploadsDir, { recursive: true });
+    } catch (error) {
+      console.error("Failed to create directory:", error);
+      throw new Error("Failed to create uploads directory");
+    }
+
+    // Generate filename and file path
+    const filename = generateDocumentFilename(documentType, investor.fullName, propertyId);
+    const absoluteFilePath = path.join(uploadsDir, filename);
+    const relativeFilePath = `/uploads/signed-documents/${filename}`;
+
+    // Write PDF to disk
+    try {
+      await fs.writeFile(absoluteFilePath, pdfBytes);
+      console.log(`PDF saved to: ${absoluteFilePath}`);
+    } catch (error) {
+      console.error("Failed to write PDF file:", error);
+      throw new Error("Failed to write PDF file to disk");
+    }
+
+    // Calculate real file hash from PDF bytes
+    const fileHash = generateHash(Buffer.from(pdfBytes).toString('base64'));
+
+    // Save to database with real file path and hash
     const [document] = await db
       .insert(signedDocuments)
       .values({
         propertyId,
         documentType,
-        filePath,
+        filePath: relativeFilePath,
         fileHash,
-        templateVersion: 1,
-        allSignaturesComplete: false,
+        templateVersion: template.version,
+        allSignaturesComplete: allComplete,
       })
       .returning();
 
     await db.insert(signatureAuditLog).values({
       eventType: "document_sealed",
       propertyId,
-      metadata: JSON.stringify({ documentType, fileHash }),
+      metadata: JSON.stringify({ 
+        documentType, 
+        fileHash, 
+        filePath: relativeFilePath,
+        signersCompleted,
+        allComplete 
+      }),
     });
 
+    console.log(`Document generated successfully: ${relativeFilePath}`);
     return document;
   }
 }

@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Circle, Download, FileText, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 interface PropertySignatureStatus {
   propertyId: string;
@@ -15,16 +16,76 @@ interface PropertySignatureStatus {
     signedCount: number;
     totalRequired: number;
     isComplete: boolean;
+    signedInvestorIds: string[];
   }>;
   allComplete: boolean;
 }
 
 export function AdminSignatureStatus() {
   const { toast } = useToast();
+  const propertyId = "pilot-property-jvc-001";
   
   const { data: signatureStatus, isLoading } = useQuery<PropertySignatureStatus>({
-    queryKey: ["/api/signatures/property", "pilot-property-jvc-001", "status"],
+    queryKey: ["/api/signatures/property", propertyId, "status"],
   });
+
+  // Mutation for generating PDFs
+  const generatePDFMutation = useMutation({
+    mutationFn: async ({ propertyId, documentType, investorId }: { 
+      propertyId: string; 
+      documentType: string; 
+      investorId: string;
+    }) => {
+      const response = await apiRequest("POST", "/api/documents/generate", {
+        propertyId,
+        documentType,
+        investorId
+      });
+      return response.json();
+    }
+  });
+
+  const handleDownloadPDF = async (documentType: string, doc: any) => {
+    try {
+      // Get the first investor who signed this document
+      if (!doc.signedInvestorIds || doc.signedInvestorIds.length === 0) {
+        toast({
+          title: "No Signatures Found",
+          description: "This document has not been signed yet",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const investorId = doc.signedInvestorIds[0];
+
+      toast({
+        title: "Generating PDF",
+        description: `Creating signed document for ${doc.templateName}...`,
+      });
+
+      const result = await generatePDFMutation.mutateAsync({
+        propertyId,
+        documentType,
+        investorId
+      });
+
+      // Download the PDF
+      const downloadUrl = `/api/documents/${result.document.id}/download`;
+      window.open(downloadUrl, '_blank');
+
+      toast({
+        title: "PDF Generated",
+        description: "Document is ready for download",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Generation Failed",
+        description: error.message || "Failed to generate PDF",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleSendToAllInvestors = () => {
     toast({
@@ -151,16 +212,23 @@ export function AdminSignatureStatus() {
                       />
                     </div>
 
-                    {isComplete && (
+                    {doc.signedCount > 0 && doc.signedInvestorIds && doc.signedInvestorIds.length > 0 && (
                       <div className="mt-4 flex gap-2">
                         <Button 
                           size="sm" 
                           variant="outline"
+                          onClick={() => handleDownloadPDF(doc.documentType, doc)}
+                          disabled={generatePDFMutation.isPending}
                           data-testid={`button-download-${doc.documentType}`}
                         >
                           <FileText className="mr-2 h-3 w-3" />
-                          Download Signed PDF
+                          {generatePDFMutation.isPending ? "Generating..." : "Download Signed PDF"}
                         </Button>
+                        {!isComplete && (
+                          <Badge variant="secondary" className="self-center">
+                            {doc.signedCount}/4 available
+                          </Badge>
+                        )}
                       </div>
                     )}
                   </div>
