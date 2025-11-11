@@ -240,17 +240,53 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
   for (const paragraph of paragraphs) {
     if (!paragraph.trim()) continue;
 
-    // Word wrap for long paragraphs
-    const words = paragraph.split(' ');
-    let line = '';
+    // Handle single newlines within paragraphs
+    const lines = paragraph.split('\n');
+    
+    for (const textLine of lines) {
+      if (!textLine.trim()) {
+        // Empty line - add spacing
+        yPosition -= lineHeight * 0.5;
+        continue;
+      }
 
-    for (const word of words) {
-      const testLine = line + word + ' ';
-      const testWidth = bodyFont.widthOfTextAtSize(testLine, fontSize);
+      // Word wrap for long lines
+      const words = textLine.split(' ');
+      let line = '';
 
-      if (testWidth > contentWidth && line.length > 0) {
-        // Draw current line
-        page.drawText(shapeArabicText(line.trim(), language), {
+      for (const word of words) {
+        const testLine = line + word + ' ';
+        // Remove any remaining control characters before measuring
+        const cleanTestLine = testLine.replace(/[\r\n\t]/g, ' ');
+        const testWidth = bodyFont.widthOfTextAtSize(cleanTestLine, fontSize);
+
+        if (testWidth > contentWidth && line.length > 0) {
+          // Draw current line
+          const cleanLine = line.trim().replace(/[\r\n\t]/g, ' ');
+          page.drawText(shapeArabicText(cleanLine, language), {
+            x: margin,
+            y: yPosition,
+            size: fontSize,
+            font: bodyFont,
+            color: rgb(0, 0, 0),
+          });
+          yPosition -= lineHeight;
+          line = word + ' ';
+
+          // Check if we need a new page
+          if (yPosition < margin + 150) {
+            page = pdfDoc.addPage([pageWidth, pageHeight]);
+            yPosition = pageHeight - margin;
+          }
+        } else {
+          line = testLine;
+        }
+      }
+
+      // Draw remaining text in line
+      if (line.trim()) {
+        const cleanLine = line.trim().replace(/[\r\n\t]/g, ' ');
+        page.drawText(shapeArabicText(cleanLine, language), {
           x: margin,
           y: yPosition,
           size: fontSize,
@@ -258,38 +294,17 @@ export async function generateSignedPDF(options: GeneratePDFOptions): Promise<Ui
           color: rgb(0, 0, 0),
         });
         yPosition -= lineHeight;
-        line = word + ' ';
-
-        // Check if we need a new page
-        if (yPosition < margin + 150) {
-          page = pdfDoc.addPage([pageWidth, pageHeight]);
-          yPosition = pageHeight - margin;
-        }
-      } else {
-        line = testLine;
       }
-    }
 
-    // Draw remaining text in line
-    if (line.trim()) {
-      page.drawText(shapeArabicText(line.trim(), language), {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: bodyFont,
-        color: rgb(0, 0, 0),
-      });
-      yPosition -= lineHeight;
+      // New page check after each line
+      if (yPosition < margin + 150) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        yPosition = pageHeight - margin;
+      }
     }
 
     // Paragraph spacing
     yPosition -= lineHeight * 0.5;
-
-    // New page check
-    if (yPosition < margin + 150) {
-      page = pdfDoc.addPage([pageWidth, pageHeight]);
-      yPosition = pageHeight - margin;
-    }
   }
 
   // Add signature section
