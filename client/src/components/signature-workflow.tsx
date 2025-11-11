@@ -54,27 +54,32 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
   };
 
   // Define the signing workflow steps with real completion status
+  // Step unlocks when previous step is signed
+  const step1Signed = isDocumentSigned("co_ownership");
+  const step2Signed = isDocumentSigned("power_of_attorney");
+  const step3Signed = isDocumentSigned("jop_declaration");
+
   const steps: DocumentStep[] = [
     {
       id: "step-1",
       name: "Co-Ownership Agreement",
       description: "Define fractional ownership rights and obligations",
       templateType: "co_ownership",
-      status: isDocumentSigned("co_ownership") ? "completed" : "in_progress",
+      status: step1Signed ? "completed" : "in_progress",
     },
     {
       id: "step-2",
       name: "Power of Attorney",
       description: "Developer authorization for DLD processes",
       templateType: "power_of_attorney",
-      status: isDocumentSigned("power_of_attorney") ? "completed" : "pending",
+      status: step2Signed ? "completed" : step1Signed ? "in_progress" : "pending",
     },
     {
       id: "step-3",
       name: "JOP Declaration",
       description: "DLD Article 6 compliant declaration",
       templateType: "jop_declaration",
-      status: isDocumentSigned("jop_declaration") ? "completed" : "pending",
+      status: step3Signed ? "completed" : step2Signed ? "in_progress" : "pending",
     },
   ];
 
