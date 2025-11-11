@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import SignaturePad from "signature_pad";
-import { X, Download, CheckCircle, AlertCircle } from "lucide-react";
+import { X, Download, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -27,31 +27,34 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
   // Create signature session when modal opens
   const createSessionMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("/api/signatures/create-session", {
-        method: "POST",
-        body: JSON.stringify({
-          investorId,
-          propertyId,
-          templateId: template.id
-        })
+      const res = await apiRequest("POST", "/api/signatures/create-session", {
+        investorId,
+        propertyId,
+        templateId: template.id
       });
+      return await res.json();
     },
     onSuccess: (data: any) => {
       setSessionToken(data.sessionToken);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Session Creation Failed",
+        description: error.message || "Failed to create signature session. Please try again.",
+        variant: "destructive"
+      });
     }
   });
 
   // Submit signature mutation
   const submitSignatureMutation = useMutation({
     mutationFn: async (signatureDataUrl: string) => {
-      return await apiRequest("/api/signatures/submit-signature", {
-        method: "POST",
-        body: JSON.stringify({
-          sessionToken,
-          signatureDataUrl,
-          consentGiven: true
-        })
+      const res = await apiRequest("POST", "/api/signatures/submit-signature", {
+        sessionToken,
+        signatureDataUrl,
+        consentGiven: true
       });
+      return await res.json();
     },
     onSuccess: () => {
       // Invalidate queries to refresh signature status
@@ -67,11 +70,12 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
     }
   });
 
+  // Create session when modal opens
   useEffect(() => {
-    if (isOpen && !sessionToken) {
+    if (isOpen && !sessionToken && !createSessionMutation.isPending) {
       createSessionMutation.mutate();
     }
-  }, [isOpen]);
+  }, [isOpen, sessionToken]);
 
   useEffect(() => {
     if (canvasRef.current && currentView === "sign") {
@@ -120,8 +124,28 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
     if (currentView === "success") {
       onSignComplete();
     }
+    
+    // Reset all modal state
     setCurrentView("preview");
+    setSessionToken("");
+    if (signaturePad) {
+      signaturePad.clear();
+      setSignaturePad(null);
+    }
+    
     onClose();
+  };
+
+  const handleProceedToSign = () => {
+    if (!sessionToken) {
+      toast({
+        title: "Session Not Ready",
+        description: "Please wait for the signature session to be created.",
+        variant: "destructive"
+      });
+      return;
+    }
+    setCurrentView("sign");
   };
 
   return (
@@ -165,12 +189,40 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
               </div>
             </div>
 
+            {createSessionMutation.isError && (
+              <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                <div className="flex gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-red-900 dark:text-red-100 mb-1">
+                      Session Error
+                    </p>
+                    <p className="text-red-700 dark:text-red-300">
+                      Failed to create signature session. Please close and try again.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3 justify-end">
               <Button variant="outline" onClick={handleClose} data-testid="button-cancel-preview">
                 Cancel
               </Button>
-              <Button onClick={() => setCurrentView("sign")} size="lg" data-testid="button-proceed-to-sign">
-                Proceed to Sign
+              <Button 
+                onClick={handleProceedToSign} 
+                size="lg" 
+                disabled={createSessionMutation.isPending || !sessionToken}
+                data-testid="button-proceed-to-sign"
+              >
+                {createSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Preparing...
+                  </>
+                ) : (
+                  "Proceed to Sign"
+                )}
               </Button>
             </div>
           </div>
@@ -183,9 +235,7 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
               <div className="border-2 border-dashed border-muted-foreground/20 rounded-lg p-1 bg-white">
                 <canvas
                   ref={canvasRef}
-                  width={700}
-                  height={200}
-                  className="w-full touch-none"
+                  className="w-full h-[200px] touch-none"
                   data-testid="canvas-signature"
                 />
               </div>
@@ -201,8 +251,20 @@ export function SignatureModal({ isOpen, onClose, template, investorId, property
               <Button variant="outline" onClick={() => setCurrentView("preview")} data-testid="button-back-to-preview">
                 Back to Preview
               </Button>
-              <Button onClick={handleSignDocument} size="lg" data-testid="button-submit-signature">
-                Sign Document
+              <Button 
+                onClick={handleSignDocument} 
+                size="lg" 
+                disabled={submitSignatureMutation.isPending}
+                data-testid="button-submit-signature"
+              >
+                {submitSignatureMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing...
+                  </>
+                ) : (
+                  "Sign Document"
+                )}
               </Button>
             </div>
           </div>

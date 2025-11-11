@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { SignatureModal } from "@/components/signature-modal";
+import { useSignatureStatus } from "@/hooks/use-signature-status";
 import type { AgreementTemplate } from "@shared/schema";
 
 interface SignatureWorkflowProps {
@@ -21,7 +22,6 @@ type DocumentStep = {
 };
 
 export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
-  const [currentStep, setCurrentStep] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<AgreementTemplate | null>(null);
   
@@ -29,47 +29,57 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
     queryKey: ["/api/templates"],
   });
 
+  // Fetch actual signature status from backend
+  const { data: signatureStatus } = useSignatureStatus(investorId);
+
   const handleOpenSignature = (template: AgreementTemplate) => {
     setSelectedTemplate(template);
     setIsModalOpen(true);
   };
 
   const handleSignComplete = () => {
-    // Move to next step - allow completion of all 3 steps
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1);
-    }
+    // Close modal - signature status will be auto-refreshed by React Query
     setIsModalOpen(false);
     setSelectedTemplate(null);
   };
 
-  // Define the signing workflow steps
+  // Helper to check if a document type has been signed
+  const isDocumentSigned = (templateType: string): boolean => {
+    if (!signatureStatus) return false;
+    return signatureStatus.signatures.some(sig => {
+      // Match template by finding the template with matching template type
+      const template = templates.find(t => t.id === sig.templateId);
+      return template?.templateType === templateType;
+    });
+  };
+
+  // Define the signing workflow steps with real completion status
   const steps: DocumentStep[] = [
     {
       id: "step-1",
       name: "Co-Ownership Agreement",
       description: "Define fractional ownership rights and obligations",
       templateType: "co_ownership",
-      status: currentStep > 0 ? "completed" : currentStep === 0 ? "in_progress" : "pending",
+      status: isDocumentSigned("co_ownership") ? "completed" : "in_progress",
     },
     {
       id: "step-2",
       name: "Power of Attorney",
       description: "Developer authorization for DLD processes",
       templateType: "power_of_attorney",
-      status: currentStep > 1 ? "completed" : currentStep === 1 ? "in_progress" : "pending",
+      status: isDocumentSigned("power_of_attorney") ? "completed" : "pending",
     },
     {
       id: "step-3",
       name: "JOP Declaration",
       description: "DLD Article 6 compliant declaration",
       templateType: "jop_declaration",
-      status: currentStep > 2 ? "completed" : currentStep === 2 ? "in_progress" : "pending",
+      status: isDocumentSigned("jop_declaration") ? "completed" : "pending",
     },
   ];
 
-  const progressPercentage = ((currentStep) / steps.length) * 100;
   const completedSteps = steps.filter((s) => s.status === "completed").length;
+  const progressPercentage = (completedSteps / steps.length) * 100;
 
   return (
     <div className="space-y-6">
@@ -98,7 +108,7 @@ export function SignatureWorkflow({ investorId }: SignatureWorkflowProps) {
       <div className="space-y-4">
         {steps.map((step, index) => {
           const template = templates.find((t) => t.templateType === step.templateType);
-          const isActive = currentStep === index;
+          const isActive = step.status === "in_progress";
           const isCompleted = step.status === "completed";
           const isPending = step.status === "pending";
 
