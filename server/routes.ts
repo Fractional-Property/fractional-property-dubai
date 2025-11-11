@@ -1,8 +1,9 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertInvestorSchema, loginSchema, verifyOtpSchema, adminLoginSchema, submitSignatureSchema } from "@shared/schema";
-import { randomInt } from "crypto";
+import { insertInvestorSchema, loginSchema, verifyOtpSchema, adminLoginSchema, submitSignatureSchema, createReservationSchema, sendInvitationsSchema, acceptInvitationSchema } from "@shared/schema";
+import { randomInt, randomBytes } from "crypto";
+import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -11,6 +12,62 @@ const otpStore = new Map<string, { otp: string; expiresAt: number }>();
 
 function generateOTP(): string {
   return randomInt(100000, 999999).toString();
+}
+
+// Session-based authentication middleware for investor endpoints
+async function requireInvestorAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    // Extract investor ID from session, NOT from request body
+    const investorId = req.session?.investorId;
+    
+    if (!investorId) {
+      return res.status(401).json({ 
+        message: "Authentication required. Please log in." 
+      });
+    }
+
+    // Verify investor exists
+    const investor = await storage.getInvestorById(investorId);
+    if (!investor) {
+      return res.status(401).json({ 
+        message: "Invalid session. Please log in again." 
+      });
+    }
+
+    // Attach investor to request for downstream use
+    req.investor = investor;
+    next();
+  } catch (error: any) {
+    res.status(500).json({ message: "Authentication error" });
+  }
+}
+
+// Simple in-memory rate limiter for public endpoints
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimitMiddleware(maxRequests: number = 10, windowMs: number = 60000) {
+  return (req: any, res: any, next: any) => {
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    
+    const record = rateLimitStore.get(key);
+    
+    if (!record || now > record.resetAt) {
+      // New window
+      rateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+    
+    if (record.count >= maxRequests) {
+      return res.status(429).json({ 
+        message: "Too many requests. Please try again later.",
+        retryAfter: Math.ceil((record.resetAt - now) / 1000)
+      });
+    }
+    
+    record.count++;
+    next();
+  };
 }
 
 const uploadsDir = path.join(process.cwd(), "uploads", "kyc-documents");
@@ -45,7 +102,7 @@ const upload = multer({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
-  app.post("/api/auth/send-otp", async (req, res) => {
+  app.post("/api/auth/send-otp", rateLimitMiddleware(5, 60000), async (req, res) => {
     try {
       const { email } = loginSchema.parse(req.body);
       
@@ -55,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt: Date.now() + 10 * 60 * 1000,
       });
 
-      console.log(`OTP for ${email}: ${otp}`);
+      // SECURITY: OTP removed from logs - never log secrets in production
       
       res.json({ success: true, message: "OTP sent to email" });
     } catch (error: any) {
@@ -63,28 +120,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/verify-otp", async (req, res) => {
+  app.post("/api/auth/verify-otp", rateLimitMiddleware(10, 60000), async (req, res) => {
     try {
       const { email, otp } = verifyOtpSchema.parse(req.body);
       
-      // DEVELOPMENT MODE: Accept any OTP for testing/demo purposes
-      console.log(`OTP verification bypassed for ${email} - any OTP accepted`);
+      // Get stored OTP
+      const storedOTP = otpStore.get(email);
       
-      // Clear stored OTP if it exists
-      if (otpStore.has(email)) {
-        otpStore.delete(email);
+      if (!storedOTP) {
+        return res.status(400).json({ message: "No OTP found. Please request a new one." });
       }
-
-      const investor = await storage.getInvestorByEmail(email);
       
+      if (storedOTP.expiresAt < Date.now()) {
+        otpStore.delete(email);
+        return res.status(400).json({ message: "OTP has expired. Please request a new one." });
+      }
+      
+      // CRITICAL: Verify OTP matches (case-sensitive)
+      if (storedOTP.otp !== otp) {
+        return res.status(400).json({ message: "Invalid OTP. Please try again." });
+      }
+      
+      // OTP is valid - clear it
+      otpStore.delete(email);
+      
+      const investor = await storage.getInvestorByEmail(email);
       if (!investor) {
         return res.status(404).json({ message: "Investor not found" });
       }
-
-      res.json({ investor });
+      
+      // CRITICAL SECURITY: Regenerate session to prevent session fixation attacks
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error("Session regeneration failed:", err);
+          return res.status(500).json({ message: "Session creation failed" });
+        }
+        
+        // Set session data after regeneration
+        req.session.investorId = investor.id;
+        req.session.investorEmail = investor.email;
+        console.log(`Session created for investor: ${investor.email} (ID: ${investor.id})`);
+        
+        res.json({ investor });
+      });
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session?.destroy((err) => {
+      if (err) {
+        console.error("Logout error:", err);
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      console.log("Session destroyed successfully");
+      res.json({ success: true });
+    });
   });
 
   app.post("/api/investors", async (req, res) => {
@@ -97,8 +189,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/investors/:id", async (req, res) => {
+  app.get("/api/investors/:id", requireInvestorAuth, async (req, res) => {
     try {
+      // Investors can only access their own data
+      if (req.params.id !== req.investor!.id) {
+        return res.status(403).json({ 
+          message: "Forbidden: You can only access your own investor data" 
+        });
+      }
+
       const investor = await storage.getInvestorById(req.params.id);
       if (!investor) {
         return res.status(404).json({ message: "Investor not found" });
@@ -109,13 +208,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/investors/:id/upload-documents", upload.fields([
+  app.post("/api/investors/:id/upload-documents", requireInvestorAuth, upload.fields([
     { name: "passport", maxCount: 1 },
     { name: "proofOfAddress", maxCount: 1 },
     { name: "bankStatement", maxCount: 1 },
   ]), async (req, res) => {
     try {
       const investorId = req.params.id;
+
+      // Investors can only upload documents for themselves
+      if (investorId !== req.investor!.id) {
+        return res.status(403).json({ 
+          message: "Forbidden: You can only upload documents for your own account" 
+        });
+      }
+
       const files = req.files as { [fieldname: string]: Express.Multer.File[] };
 
       if (!files || Object.keys(files).length === 0) {
@@ -151,9 +258,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tap-payment/create-charge", async (req, res) => {
+  app.post("/api/tap-payment/create-charge", requireInvestorAuth, async (req, res) => {
     try {
       const { amount, investorId, propertyId } = req.body;
+
+      // Validate that investorId from body matches session
+      if (investorId !== req.investor!.id) {
+        return res.status(403).json({ message: "Cannot create charges for other investors" });
+      }
 
       const tapResponse = await fetch("https://api.tap.company/v2/charges", {
         method: "POST",
@@ -205,6 +317,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tap-payment/webhook", async (req, res) => {
     try {
+      // CRITICAL SECURITY: Verify webhook signature using TAP_SECRET_KEY
+      const signature = req.headers['x-tap-signature'] as string;
+      if (!signature) {
+        console.error("Webhook rejected: Missing signature");
+        return res.status(401).json({ message: "Missing webhook signature" });
+      }
+      
+      // Calculate expected signature using HMAC SHA-256
+      const crypto = require('crypto');
+      const hmac = crypto.createHmac('sha256', process.env.TAP_SECRET_KEY || '');
+      hmac.update(JSON.stringify(req.body));
+      const expectedSignature = hmac.digest('hex');
+      
+      // Use timing-safe comparison to prevent timing attacks
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+        console.error("Webhook rejected: Invalid signature");
+        return res.status(401).json({ message: "Invalid webhook signature" });
+      }
+
       const charge = req.body;
 
       if (charge.status === "CAPTURED") {
@@ -414,9 +545,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/signatures/create-session", async (req, res) => {
+  app.post("/api/signatures/create-session", requireInvestorAuth, async (req, res) => {
     try {
-      const { investorId, propertyId, templateId } = req.body;
+      const { propertyId, templateId } = req.body;
+      const investorId = req.investor!.id; // From session, not request body
       const ipAddress = req.ip || req.socket.remoteAddress;
       const userAgent = req.get("user-agent");
 
@@ -441,9 +573,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
       });
 
-      // Get investor email for OTP display
-      const investor = await storage.getInvestorById(investorId);
-      console.log(`Signature OTP for ${investor?.email || 'investor'}: ${otp}`);
+      // SECURITY: OTP removed from logs - never log secrets in production
 
       res.json({ sessionId: session.id, sessionToken: session.sessionToken });
     } catch (error: any) {
@@ -508,9 +638,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/signatures/investor/:investorId/property/:propertyId", async (req, res) => {
+  app.get("/api/signatures/investor/:investorId/property/:propertyId", requireInvestorAuth, async (req, res) => {
     try {
       const { investorId, propertyId } = req.params;
+
+      // Investors can only access their own signatures
+      if (investorId !== req.investor!.id) {
+        return res.status(403).json({ 
+          message: "Forbidden: You can only access your own signatures" 
+        });
+      }
+
       const signatures = await storage.getInvestorSignatures(investorId, propertyId);
       res.json(signatures);
     } catch (error: any) {
@@ -617,9 +755,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get investor's signature status for all documents
-  app.get("/api/signatures/investor/:investorId/status", async (req, res) => {
+  app.get("/api/signatures/investor/:investorId/status", requireInvestorAuth, async (req, res) => {
     try {
       const { investorId } = req.params;
+
+      // Investors can only access their own signature status
+      if (investorId !== req.investor!.id) {
+        return res.status(403).json({ 
+          message: "Forbidden: You can only access your own signature status" 
+        });
+      }
+
       const signatures = await storage.getInvestorSignatures(investorId);
       
       // Return which documents have been signed
@@ -778,6 +924,302 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: error.message || "Internal server error during bundle export"
       });
+    }
+  });
+
+  // ====== CO-OWNERSHIP RESERVATION ROUTES ======
+
+  // Create a new reservation (express interest) - requires authentication
+  app.post("/api/reservations", requireInvestorAuth, async (req, res) => {
+    try {
+      // Validate request body with Zod schema
+      const validatedData = createReservationSchema.parse(req.body);
+
+      // Use investor ID from session, NOT from request body
+      const reservationData = {
+        ...validatedData,
+        initiatorInvestorId: req.investor!.id
+      };
+
+      // Use transactional storage method to ensure atomicity
+      const result = await storage.createReservationWithSlots(reservationData);
+
+      console.log(`Reservation created by ${req.investor!.email}: ${result.reservation.id} with ${result.slots.length} slots`);
+
+      res.json({
+        success: true,
+        reservation: result.reservation,
+        slots: result.slots,
+      });
+    } catch (error: any) {
+      console.error("Reservation creation error:", error);
+      
+      // Handle Zod validation errors
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      
+      // Handle database constraint violations
+      if (error.code === "23505") {
+        return res.status(409).json({ 
+          message: "An active reservation already exists for this property" 
+        });
+      }
+      
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get investor's reservations - requires authentication
+  app.get("/api/reservations/investor", requireInvestorAuth, async (req, res) => {
+    try {
+      // Use investor ID from session, NOT from URL params
+      const reservations = await storage.getReservationsByInvestor(req.investor!.id);
+      
+      res.json({ reservations });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get reservation details with slots and invitations
+  app.get("/api/reservations/:reservationId", async (req, res) => {
+    try {
+      const { reservationId } = req.params;
+      const data = await storage.getReservationWithSlots(reservationId);
+      
+      res.json(data);
+    } catch (error: any) {
+      if (error.message === "Reservation not found") {
+        return res.status(404).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update reservation status
+  app.patch("/api/reservations/:reservationId/status", async (req, res) => {
+    try {
+      const { reservationId } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+
+      const validStatuses = ["draft", "invitations_sent", "all_signed", "payment_pending", "payment_complete", "cancelled"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ 
+          message: `Invalid status. Must be one of: ${validStatuses.join(", ")}` 
+        });
+      }
+
+      const reservation = await storage.updateReservationStatus(reservationId, status);
+      
+      console.log(`Reservation ${reservationId} status updated to: ${status}`);
+      
+      res.json({ success: true, reservation });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Cancel reservation (cascade delete)
+  app.delete("/api/reservations/:reservationId", async (req, res) => {
+    try {
+      const { reservationId } = req.params;
+      
+      await storage.cancelReservation(reservationId);
+      
+      console.log(`Reservation ${reservationId} cancelled`);
+      
+      res.json({ success: true, message: "Reservation cancelled successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Send co-owner invitations - requires authentication
+  app.post("/api/reservations/:reservationId/invite", requireInvestorAuth, async (req, res) => {
+    try {
+      const { reservationId } = req.params;
+      
+      // Validate request body with Zod schema
+      const validatedData = sendInvitationsSchema.parse(req.body);
+
+      // Get reservation to get the initiator
+      const reservation = await storage.getReservationById(reservationId);
+      if (!reservation) {
+        return res.status(404).json({ message: "Reservation not found" });
+      }
+
+      // Verify the authenticated investor is the reservation initiator
+      if (reservation.initiatorInvestorId !== req.investor!.id) {
+        return res.status(403).json({ 
+          message: "Forbidden: Only the reservation initiator can send invitations" 
+        });
+      }
+
+      // Prepare invitations with tokens and expiry dates
+      const invitationsWithTokens = validatedData.invitations.map(inv => {
+        // Generate secure 32-char token
+        const invitationToken = randomBytes(16).toString('hex');
+        
+        // Set expiry to 7 days from now
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        return {
+          slotId: inv.slotId,
+          invitedEmail: inv.invitedEmail,
+          invitationToken,
+          expiresAt,
+        };
+      });
+
+      // Use transactional storage method to ensure atomicity
+      const createdInvitations = await storage.sendInvitationsWithUpdates(
+        reservationId,
+        invitationsWithTokens,
+        reservation.initiatorInvestorId
+      );
+
+      // Log invitation tokens for development
+      createdInvitations.forEach(inv => {
+        console.log(`Invitation created for ${inv.invitedEmail}: token=${inv.invitationToken}`);
+      });
+
+      console.log(`${createdInvitations.length} invitations sent for reservation ${reservationId}`);
+
+      res.json({
+        success: true,
+        invitations: createdInvitations.map(inv => ({
+          ...inv,
+          invitationLink: `${req.headers.origin}/invitation/${inv.invitationToken}`,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Invitation creation error:", error);
+      
+      // Handle Zod validation errors
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      
+      // Handle database constraint violations
+      if (error.code === "23505") {
+        return res.status(409).json({ 
+          message: "An invitation already exists for this slot or email" 
+        });
+      }
+      
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get invitation details (for pre-filled form)
+  app.get("/api/invitations/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      
+      const invitation = await storage.getInvitationByToken(token);
+      
+      if (!invitation) {
+        return res.status(404).json({ message: "Invitation not found" });
+      }
+
+      // Get reservation and property details
+      const reservationData = await storage.getReservationWithSlots(invitation.reservationId);
+      const property = await storage.getPropertyById(reservationData.reservation.propertyId);
+      
+      // Get slot details
+      const slot = reservationData.slots.find(s => s.id === invitation.slotId);
+
+      res.json({
+        invitation,
+        reservation: reservationData.reservation,
+        property,
+        slot,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Accept invitation (public endpoint with token) - rate limited
+  app.post("/api/invitations/accept", rateLimitMiddleware(10, 60000), async (req, res) => {
+    try {
+      // Validate request body with Zod schema
+      const validatedData = acceptInvitationSchema.parse(req.body);
+
+      const invitation = await storage.acceptInvitation(validatedData.invitationToken, validatedData.investorId);
+      
+      console.log(`Invitation ${invitation.id} accepted by investor ${validatedData.investorId}`);
+      
+      res.json({
+        success: true,
+        message: "Invitation accepted successfully",
+        invitation,
+      });
+    } catch (error: any) {
+      console.error("Invitation acceptance error:", error);
+      
+      // Handle Zod validation errors
+      if (error.name === "ZodError") {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: error.errors 
+        });
+      }
+      
+      if (error.message.includes("not found")) {
+        return res.status(404).json({ message: error.message });
+      }
+      
+      if (error.message.includes("already been processed") || error.message.includes("expired")) {
+        return res.status(400).json({ message: error.message });
+      }
+      
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Decline invitation
+  app.post("/api/invitations/decline", async (req, res) => {
+    try {
+      const { invitationToken } = req.body;
+
+      if (!invitationToken) {
+        return res.status(400).json({ message: "invitationToken is required" });
+      }
+
+      const invitation = await storage.declineInvitation(invitationToken);
+      
+      console.log(`Invitation ${invitation.id} declined`);
+      
+      res.json({
+        success: true,
+        message: "Invitation declined",
+        invitation,
+      });
+    } catch (error: any) {
+      console.error("Invitation decline error:", error);
+      
+      if (error.message.includes("not found")) {
+        return res.status(404).json({ message: error.message });
+      }
+      
+      if (error.message.includes("already been processed")) {
+        return res.status(400).json({ message: error.message });
+      }
+      
+      res.status(500).json({ message: error.message });
     }
   });
 

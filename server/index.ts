@@ -1,12 +1,36 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import type { Investor } from "@shared/schema";
 
 const app = express();
+const PgSession = connectPgSimple(session);
+
+// Configure trust proxy for secure cookies behind load balancers
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
+  }
+}
+
+declare module 'express-session' {
+  interface SessionData {
+    investorId?: string;
+    investorEmail?: string;
+  }
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      investor?: Investor;
+    }
   }
 }
 app.use(express.json({
@@ -15,6 +39,22 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: false }));
+
+app.use(session({
+  store: new PgSession({
+    conString: process.env.DATABASE_URL,
+    createTableIfMissing: true,
+  }),
+  secret: process.env.SESSION_SECRET || "fopd-development-secret-change-in-production",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 14 * 24 * 60 * 60 * 1000,
+    sameSite: "lax"
+  }
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();

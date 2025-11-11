@@ -1,12 +1,15 @@
 import { db } from "../db";
 import { 
   investors, fractions, properties, payments, adminUsers,
-  agreementTemplates, signatureSessions, investorSignatures, signedDocuments, signatureAuditLog, dldExports
+  agreementTemplates, signatureSessions, investorSignatures, signedDocuments, signatureAuditLog, dldExports,
+  propertyReservations, coOwnerSlots, coOwnerInvitations
 } from "@shared/schema";
 import type { 
   Investor, InsertInvestor, Fraction, InsertFraction, Property, InsertProperty, 
   Payment, InsertPayment, AdminUser, AgreementTemplate, InsertAgreementTemplate,
-  SignatureSession, InvestorSignature, SignedDocument
+  SignatureSession, InvestorSignature, SignedDocument,
+  PropertyReservation, InsertPropertyReservation, CoOwnerSlot, InsertCoOwnerSlot,
+  CoOwnerInvitation, InsertCoOwnerInvitation
 } from "@shared/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -58,6 +61,53 @@ export interface IStorage {
   
   getDLDExportsByProperty(propertyId: string): Promise<any[]>;
   createDLDExport(data: any): Promise<any>;
+  
+  createReservation(data: InsertPropertyReservation): Promise<PropertyReservation>;
+  getReservationById(id: string): Promise<PropertyReservation | undefined>;
+  getReservationsByInvestor(investorId: string): Promise<PropertyReservation[]>;
+  getReservationsByProperty(propertyId: string): Promise<PropertyReservation[]>;
+  updateReservationStatus(id: string, status: string): Promise<PropertyReservation>;
+  cancelReservation(id: string): Promise<void>;
+  
+  createSlots(reservationId: string, slots: InsertCoOwnerSlot[]): Promise<CoOwnerSlot[]>;
+  getSlotsByReservation(reservationId: string): Promise<CoOwnerSlot[]>;
+  updateSlotInvestor(slotId: string, investorId: string): Promise<CoOwnerSlot>;
+  updateSlotStatus(slotId: string, status: string): Promise<CoOwnerSlot>;
+  
+  createInvitation(data: InsertCoOwnerInvitation): Promise<CoOwnerInvitation>;
+  getInvitationByToken(token: string): Promise<CoOwnerInvitation | undefined>;
+  getInvitationsByReservation(reservationId: string): Promise<CoOwnerInvitation[]>;
+  acceptInvitation(token: string, investorId: string): Promise<CoOwnerInvitation>;
+  declineInvitation(token: string): Promise<CoOwnerInvitation>;
+  
+  getReservationWithSlots(reservationId: string): Promise<{
+    reservation: PropertyReservation;
+    slots: CoOwnerSlot[];
+    invitations: CoOwnerInvitation[];
+  }>;
+  
+  createReservationWithSlots(data: {
+    propertyId: string;
+    initiatorInvestorId: string;
+    totalSlotsReserved: number;
+    slots: Array<{
+      slotNumber: number;
+      sharePercentage: number;
+      invitationEmail?: string;
+      investorId?: string;
+    }>;
+  }): Promise<{ reservation: PropertyReservation; slots: CoOwnerSlot[] }>;
+  
+  sendInvitationsWithUpdates(
+    reservationId: string,
+    invitations: Array<{
+      slotId: string;
+      invitedEmail: string;
+      invitationToken: string;
+      expiresAt: Date;
+    }>,
+    initiatorInvestorId: string
+  ): Promise<CoOwnerInvitation[]>;
 }
 
 export class DbStorage implements IStorage {
@@ -627,6 +677,251 @@ export class DbStorage implements IStorage {
   async createDLDExport(data: any): Promise<any> {
     const [exportRecord] = await db.insert(dldExports).values(data).returning();
     return exportRecord;
+  }
+
+  async createReservation(data: InsertPropertyReservation): Promise<PropertyReservation> {
+    const [reservation] = await db.insert(propertyReservations).values(data).returning();
+    return reservation;
+  }
+
+  async getReservationById(id: string): Promise<PropertyReservation | undefined> {
+    const [reservation] = await db.select().from(propertyReservations).where(eq(propertyReservations.id, id));
+    return reservation;
+  }
+
+  async getReservationsByInvestor(investorId: string): Promise<PropertyReservation[]> {
+    return await db
+      .select()
+      .from(propertyReservations)
+      .where(eq(propertyReservations.initiatorInvestorId, investorId))
+      .orderBy(desc(propertyReservations.createdAt));
+  }
+
+  async getReservationsByProperty(propertyId: string): Promise<PropertyReservation[]> {
+    return await db
+      .select()
+      .from(propertyReservations)
+      .where(eq(propertyReservations.propertyId, propertyId))
+      .orderBy(desc(propertyReservations.createdAt));
+  }
+
+  async updateReservationStatus(id: string, status: string): Promise<PropertyReservation> {
+    const [reservation] = await db
+      .update(propertyReservations)
+      .set({ reservationStatus: status, updatedAt: new Date() })
+      .where(eq(propertyReservations.id, id))
+      .returning();
+    return reservation;
+  }
+
+  async cancelReservation(id: string): Promise<void> {
+    await db.delete(propertyReservations).where(eq(propertyReservations.id, id));
+  }
+
+  async createSlots(reservationId: string, slots: InsertCoOwnerSlot[]): Promise<CoOwnerSlot[]> {
+    const slotsWithReservation = slots.map(slot => ({
+      ...slot,
+      reservationId,
+    }));
+    return await db.insert(coOwnerSlots).values(slotsWithReservation).returning();
+  }
+
+  async getSlotsByReservation(reservationId: string): Promise<CoOwnerSlot[]> {
+    return await db
+      .select()
+      .from(coOwnerSlots)
+      .where(eq(coOwnerSlots.reservationId, reservationId));
+  }
+
+  async updateSlotInvestor(slotId: string, investorId: string): Promise<CoOwnerSlot> {
+    const [slot] = await db
+      .update(coOwnerSlots)
+      .set({ investorId })
+      .where(eq(coOwnerSlots.id, slotId))
+      .returning();
+    return slot;
+  }
+
+  async updateSlotStatus(slotId: string, status: string): Promise<CoOwnerSlot> {
+    const [slot] = await db
+      .update(coOwnerSlots)
+      .set({ invitationStatus: status })
+      .where(eq(coOwnerSlots.id, slotId))
+      .returning();
+    return slot;
+  }
+
+  async createInvitation(data: InsertCoOwnerInvitation): Promise<CoOwnerInvitation> {
+    const [invitation] = await db.insert(coOwnerInvitations).values(data).returning();
+    return invitation;
+  }
+
+  async getInvitationByToken(token: string): Promise<CoOwnerInvitation | undefined> {
+    const [invitation] = await db
+      .select()
+      .from(coOwnerInvitations)
+      .where(eq(coOwnerInvitations.invitationToken, token));
+    return invitation;
+  }
+
+  async getInvitationsByReservation(reservationId: string): Promise<CoOwnerInvitation[]> {
+    return await db
+      .select()
+      .from(coOwnerInvitations)
+      .where(eq(coOwnerInvitations.reservationId, reservationId));
+  }
+
+  async acceptInvitation(token: string, investorId: string): Promise<CoOwnerInvitation> {
+    const invitation = await this.getInvitationByToken(token);
+    
+    if (!invitation) {
+      throw new Error("Invitation not found");
+    }
+
+    if (invitation.status !== "pending") {
+      throw new Error("Invitation has already been processed");
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      throw new Error("Invitation has expired");
+    }
+
+    await this.updateSlotInvestor(invitation.slotId, investorId);
+    await this.updateSlotStatus(invitation.slotId, "accepted");
+
+    const [updatedInvitation] = await db
+      .update(coOwnerInvitations)
+      .set({ 
+        status: "accepted", 
+        acceptedAt: new Date() 
+      })
+      .where(eq(coOwnerInvitations.id, invitation.id))
+      .returning();
+
+    return updatedInvitation;
+  }
+
+  async declineInvitation(token: string): Promise<CoOwnerInvitation> {
+    const invitation = await this.getInvitationByToken(token);
+    
+    if (!invitation) {
+      throw new Error("Invitation not found");
+    }
+
+    if (invitation.status !== "pending") {
+      throw new Error("Invitation has already been processed");
+    }
+
+    await this.updateSlotStatus(invitation.slotId, "declined");
+
+    const [updatedInvitation] = await db
+      .update(coOwnerInvitations)
+      .set({ status: "declined" })
+      .where(eq(coOwnerInvitations.id, invitation.id))
+      .returning();
+
+    return updatedInvitation;
+  }
+
+  async getReservationWithSlots(reservationId: string): Promise<{
+    reservation: PropertyReservation;
+    slots: CoOwnerSlot[];
+    invitations: CoOwnerInvitation[];
+  }> {
+    const reservation = await this.getReservationById(reservationId);
+    
+    if (!reservation) {
+      throw new Error("Reservation not found");
+    }
+
+    const slots = await this.getSlotsByReservation(reservationId);
+    const invitations = await this.getInvitationsByReservation(reservationId);
+
+    return {
+      reservation,
+      slots,
+      invitations,
+    };
+  }
+
+  async createReservationWithSlots(data: {
+    propertyId: string;
+    initiatorInvestorId: string;
+    totalSlotsReserved: number;
+    slots: Array<{
+      slotNumber: number;
+      sharePercentage: number;
+      invitationEmail?: string;
+      investorId?: string;
+    }>;
+  }): Promise<{ reservation: PropertyReservation; slots: CoOwnerSlot[] }> {
+    return await db.transaction(async (tx) => {
+      // Create the reservation
+      const [reservation] = await tx.insert(propertyReservations).values({
+        propertyId: data.propertyId,
+        initiatorInvestorId: data.initiatorInvestorId,
+        totalSlotsReserved: data.totalSlotsReserved,
+        reservationStatus: "draft",
+      }).returning();
+
+      // Create all slots
+      const slotsWithReservation = data.slots.map(slot => ({
+        reservationId: reservation.id,
+        slotNumber: slot.slotNumber,
+        sharePercentage: slot.sharePercentage.toString(),
+        invitationEmail: slot.invitationEmail || null,
+        investorId: slot.investorId || null,
+        invitationStatus: "reserved",
+      }));
+
+      const createdSlots = await tx.insert(coOwnerSlots).values(slotsWithReservation).returning();
+
+      return { reservation, slots: createdSlots };
+    });
+  }
+
+  async sendInvitationsWithUpdates(
+    reservationId: string,
+    invitations: Array<{
+      slotId: string;
+      invitedEmail: string;
+      invitationToken: string;
+      expiresAt: Date;
+    }>,
+    initiatorInvestorId: string
+  ): Promise<CoOwnerInvitation[]> {
+    return await db.transaction(async (tx) => {
+      // Create all invitations
+      const createdInvitations = await Promise.all(
+        invitations.map(async (inv) => {
+          const [invitation] = await tx.insert(coOwnerInvitations).values({
+            reservationId,
+            slotId: inv.slotId,
+            invitedEmail: inv.invitedEmail,
+            invitedByInvestorId: initiatorInvestorId,
+            invitationToken: inv.invitationToken,
+            expiresAt: inv.expiresAt,
+            status: "pending",
+          }).returning();
+
+          // Update slot status to "invited"
+          await tx
+            .update(coOwnerSlots)
+            .set({ invitationStatus: "invited" })
+            .where(eq(coOwnerSlots.id, inv.slotId));
+
+          return invitation;
+        })
+      );
+
+      // Update reservation status to "invitations_sent"
+      await tx
+        .update(propertyReservations)
+        .set({ reservationStatus: "invitations_sent", updatedAt: new Date() })
+        .where(eq(propertyReservations.id, reservationId));
+
+      return createdInvitations;
+    });
   }
 }
 

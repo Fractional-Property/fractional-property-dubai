@@ -346,6 +346,44 @@ export const submitSignatureSchema = z.object({
   consentGiven: z.boolean().default(true),
 });
 
+export const createReservationSchema = z.object({
+  propertyId: z.string().uuid("Invalid property ID"),
+  totalSlotsReserved: z.number().int().min(1).max(4, "Total slots must be between 1 and 4"),
+  slots: z.array(z.object({
+    slotNumber: z.number().int().min(1).max(4, "Slot number must be between 1 and 4"),
+    sharePercentage: z.number().min(0).max(100, "Share percentage must be between 0 and 100"),
+    invitationEmail: z.string().email("Invalid email address").optional(),
+    investorId: z.string().uuid().optional(),
+  })).min(1, "At least one slot is required").max(4, "Maximum 4 slots allowed")
+}).refine(
+  data => {
+    const total = data.slots.reduce((sum, slot) => sum + slot.sharePercentage, 0);
+    return Math.abs(total - 100) < 0.01;
+  },
+  { message: "Share percentages must add up to 100%" }
+).refine(
+  data => data.slots.length === data.totalSlotsReserved,
+  { message: "Number of slots must match totalSlotsReserved" }
+).refine(
+  data => {
+    const slotNumbers = data.slots.map(s => s.slotNumber);
+    return new Set(slotNumbers).size === slotNumbers.length;
+  },
+  { message: "Slot numbers must be unique" }
+);
+
+export const sendInvitationsSchema = z.object({
+  invitations: z.array(z.object({
+    slotId: z.string().uuid("Invalid slot ID"),
+    invitedEmail: z.string().email("Invalid email address"),
+  })).min(1, "At least one invitation is required")
+});
+
+export const acceptInvitationSchema = z.object({
+  invitationToken: z.string().min(32, "Invalid invitation token"),
+  investorId: z.string().uuid("Invalid investor ID"),
+});
+
 export type Investor = typeof investors.$inferSelect;
 export type InsertInvestor = z.infer<typeof insertInvestorSchema>;
 export type Fraction = typeof fractions.$inferSelect;
