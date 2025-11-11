@@ -420,6 +420,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ipAddress = req.ip || req.socket.remoteAddress;
       const userAgent = req.get("user-agent");
 
+      console.log("Creating signature session with:", {
+        investorId,
+        propertyId,
+        templateId,
+      });
+
       const session = await storage.createSignatureSession({
         investorId,
         propertyId,
@@ -430,6 +436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ sessionId: session.id, sessionToken: session.sessionToken });
     } catch (error: any) {
+      console.error("Failed to create signature session:", error);
       res.status(400).json({ message: error.message });
     }
   });
